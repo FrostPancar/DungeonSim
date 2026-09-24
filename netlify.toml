@@ -1,0 +1,8 @@
+# Static site: index.html loads the ES modules in src/ directly; riftgate.html
+# is the single-file bundle (rebuilt from src/ on every deploy).
+[build]
+  command = "node build.mjs"
+  publish = "."
+
+[build.environment]
+  NODE_VERSION = "22"
