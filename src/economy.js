@@ -30,6 +30,7 @@ import { createBeast, ANIMALS, beastPower } from './husbandry.js';
 import { addResource, addThought, TICKS_PER_DAY } from './colony.js';
 import { awardXp } from './expedition.js';
 import { xpToNext } from './classes.js';
+import { SITE_KINDS } from './overworld.js';
 
 // --- the ledger ---------------------------------------------------------------
 /** Pay `amount` gold for `cat` (a readout category). False if it can't be afforded. */
@@ -667,12 +668,52 @@ function payDaily(root) {
 
 // --- journeys: parties that walk to a settlement and back ------------------------------------
 export const ERRANDS = {
+  // Settlements: places to spend gold.
   trade:   { name: 'Trade',   desc: 'Buy what the settlement makes, at its own prices.' },
   recruit: { name: 'Recruit', desc: 'Buy out a volunteer’s contract. They come back with the party.' },
   heal:    { name: 'Healing', desc: 'The temple there mends wounds nobody here can: permanent injuries.' },
   tribute: { name: 'Tribute', desc: 'Pay for peace: their raiders leave you alone for a season.' },
   fund:    { name: 'Fund walls', desc: 'Pay for their defences. An ally makes the camp stronger.' },
+  // Everywhere else: places to go and get something (docs/progression-roadmap.md P1-3).
+  gather:  { name: 'Gather',  desc: 'Work the site and carry back what it holds. The first haul from anywhere is doubled.' },
+  search:  { name: 'Search',  desc: 'Go through the old place once. It may be guarded: relics, gold, sometimes a Class Tome.' },
+  pilgrim: { name: 'Pilgrimage', desc: 'Pray at the shrine. The whole camp takes heart for a while.' },
+  survey:  { name: 'Survey',  desc: 'Climb it and look around: insight, and the land around it charted.' },
+  clear:   { name: 'Clear',   desc: 'Break the camp or lair. A bounty in gold, and no more raids from it. Send your strongest.' },
 };
+/** Which errand a site offers a party, if any, beyond the settlement ones. */
+export function siteErrand(site) {
+  const K = SITE_KINDS[site.kind] || {};
+  if (K.node) return (site.reserve || 0) > 0 ? 'gather' : null;
+  if (K.delve) return site.searched ? null : 'search';
+  if (K.shrine) return 'pilgrim';
+  if (K.landmark) return site.surveyed ? null : 'survey';
+  if (K.hostileSite) return site.cleared ? null : 'clear';
+  return null;
+}
+/** What a site's errand would bring home, for the card that offers it. */
+export function siteRewardPreview(root, site, n = 2) {
+  const e = siteErrand(site);
+  if (!e) return null;
+  const K = SITE_KINDS[site.kind];
+  if (e === 'gather') return { errand: e, res: { [K.node]: gatherAmount(site, n) }, first: !site.gathered };
+  if (e === 'search') return { errand: e, text: 'relics, gold, maybe a Class Tome', risk: 0.25 + site.tier * 0.05 };
+  if (e === 'pilgrim') return { errand: e, text: 'the whole camp in better spirits', ready: !(site.pilgrimDay > root.day - 10) };
+  if (e === 'survey') return { errand: e, text: `${60 + site.tier * 20} insight, and nearby sites charted` };
+  if (e === 'clear') return { errand: e, res: { gold: clearBounty(site) }, text: 'and no more raids from it', risk: 0.5 };
+  return null;
+}
+function gatherAmount(site, n) {
+  const per = Math.round(18 * (site.richness || 1));
+  return Math.max(1, Math.min(site.reserve || 0, per * Math.max(1, n) * (site.gathered ? 1 : 2)));
+}
+function clearBounty(site) { return 40 + (site.tier || 1) * 25; }
+/** A hostile site's odds against this party: power over the site's strength. */
+export function clearOdds(party, site) {
+  const pw = party.reduce((s, c) => s + powerOfLite(c), 0);
+  return clamp(pw / ((site.strength || 8) * 9), 0.1, 0.95);
+}
+function powerOfLite(c) { return c.combat && c.combat.power ? c.combat.power : 10 + c.level * 3; }
 export function journeyDays(game, site) {
   const ow = game.root.overworld;
   const ticks = ow ? ow.travelTicks(ow.colony, site) : TICKS_PER_DAY;
@@ -698,8 +739,12 @@ export function sendJourney(game, ids, siteId, errand, goods = null) {
   if (!ERRANDS[errand]) return 'No such errand.';
   const party = ids.map(id => root.colonists.find(c => c.id === id && !c.dead && !c.away && !(c.mapId || 0))).filter(Boolean);
   if (!party.length) return 'Choose who goes.';
-  if ((site.hostility ?? 50) >= 75 && errand !== 'tribute') return `${site.name} won’t deal with you.`;
-  let cost = errandCost(root, site, errand, ids);
+  const settle = SITE_KINDS[site.kind] && SITE_KINDS[site.kind].trade;
+  if (settle && (site.hostility ?? 50) >= 75 && errand !== 'tribute') return `${site.name} won’t deal with you.`;
+  if (!settle && errand !== siteErrand(site)) return `Nothing to ${ERRANDS[errand].name.toLowerCase()} at ${site.name}.`;
+  if (errand === 'pilgrim' && site.pilgrimDay > root.day - 10) return `The pilgrims were at ${site.name} lately. Wait ${site.pilgrimDay + 10 - root.day} days.`;
+  if ((root.journeys || []).some(j => j.site === site.id && !settle)) return `Someone is already on the way to ${site.name}.`;
+  let cost = settle ? errandCost(root, site, errand, ids) : 0;
   if (errand === 'trade') {
     cost = 0;
     if (!site.stock && ow.rollStock) site.stock = ow.rollStock(rngFor(root, 'site' + site.id), site);
@@ -714,6 +759,7 @@ export function sendJourney(game, ids, siteId, errand, goods = null) {
   const days = journeyDays(root, site);
   for (const c of party) { c.away = true; c.task = null; c.order = null; c.path = null; }
   (root.journeys || (root.journeys = [])).push({ ids: party.map(c => c.id), site: site.id, errand, goods, back: root.tick + days * TICKS_PER_DAY, paid: cost });
+  root.stats.journeys = (root.stats.journeys || 0) + 1;
   root.log(`${party.map(c => c.name.short).join(', ')} set out for ${site.name} (${ERRANDS[errand].name.toLowerCase()}), back in ${days} day${days === 1 ? '' : 's'}.`, 'info');
   return '';
 }
@@ -754,9 +800,74 @@ function tickJourneys(root) {
       site.hostility = clamp((site.hostility || 50) - 20, 0, 100);
       what = `— ${site.name} is an ally now`;
     }
+    else if (site && ['gather', 'search', 'pilgrim', 'survey', 'clear'].includes(j.errand)) what = resolveSiteErrand(root, site, j, party, rng);
     if (site) site.standing = (site.standing || 0) + j.paid * 0.08;
     root.log(`${party.map(c => c.name.short).join(', ')} come${party.length === 1 ? 's' : ''} back from ${site ? site.name : 'the road'} ${what}.`, 'good');
   }
+}
+
+/** A party is home from a non-settlement site: what they found, as the log's tail. */
+function resolveSiteErrand(root, site, j, party, rng) {
+  const hurt = (p) => { for (const c of party) if (rng.chance(p)) c.hp = Math.max(1, Math.round(c.hp * rng.float(0.35, 0.7))); };
+  if (j.errand === 'gather') {
+    const res = SITE_KINDS[site.kind].node;
+    const q = gatherAmount(site, party.length);
+    site.reserve = Math.max(0, (site.reserve || 0) - q);
+    site.gathered = (site.gathered || 0) + 1;
+    addResource(root, res, q);
+    return `with ${q} ${RESOURCES[res].name.toLowerCase()}${site.reserve ? '' : ' — the site is worked out'}`;
+  }
+  if (j.errand === 'search') {
+    site.searched = true;
+    if (rng.chance(0.25 + site.tier * 0.05)) hurt(0.5);
+    const got = [];
+    const gold = rng.int(15, 35) * (site.tier || 1);
+    addResource(root, 'gold', gold); got.push(`${gold} gold`);
+    const relics = rng.int(1, 2 + Math.floor((site.tier || 1) / 3));
+    addResource(root, 'relics', relics); got.push(`${relics} relic${relics > 1 ? 's' : ''}`);
+    if (rng.chance(0.3)) { root.reagents.class_tome = (root.reagents.class_tome || 0) + 1; got.push('a Class Tome'); }
+    else if (rng.chance(0.6)) { const it = generateItem(rng, { tier: clamp((site.tier || 1) + 1, 1, 10), slot: rng.pick(['weapon', 'armor', 'head', 'feet', 'charm']) }); root.armory.push(it); got.push(it.name); }
+    return `with ${got.join(', ')}`;
+  }
+  if (j.errand === 'pilgrim') {
+    site.pilgrimDay = root.day;
+    for (const c of root.colonists) if (!c.dead) addThought(c, 'relic_awe');
+    return 'and stories that lift the whole camp';
+  }
+  if (j.errand === 'survey') {
+    site.surveyed = true;
+    root.pendingInsight += 60 + site.tier * 20;
+    const found = root.overworld.reveal(site.x, site.y, 12);
+    return `with ${60 + site.tier * 20} insight${found.length ? ` and ${found.length} new site${found.length > 1 ? 's' : ''} charted` : ''}`;
+  }
+  if (j.errand === 'clear') {
+    if (rng.chance(clearOdds(party, site))) {
+      site.cleared = true; site.hostility = 0;
+      const b = clearBounty(site);
+      addResource(root, 'gold', b);
+      hurt(0.3);
+      return `victorious: ${site.name} is broken, and its hoard pays ${b} gold`;
+    }
+    hurt(0.8);
+    return `beaten back from ${site.name}, bloodied`;
+  }
+  return '';
+}
+
+// --- packs: leather turned into loot-carrying room ------------------------------------------
+export const PACK_STEP = 30, PACK_MAX = 3;
+export function packUpgradeCost(npc) { const lv = Math.round((npc.packUpgrade || 0) / PACK_STEP); return { leather: 12 + lv * 10, cloth: 4 + lv * 3 }; }
+/** Stitch a bigger pack for a delver: more loot carried out of the Rift per trip. */
+export function upgradePack(game, id) {
+  const root = game.root, c = root.colonists.find(x => x.id === id && !x.dead);
+  if (!c) return 'No such colonist.';
+  if ((c.packUpgrade || 0) >= PACK_STEP * PACK_MAX) return 'That pack is as big as a back can carry.';
+  const cost = packUpgradeCost(c);
+  for (const [k, v] of Object.entries(cost)) if ((root.resources[k] || 0) < v) return `Needs ${v} ${RESOURCES[k].name.toLowerCase()}.`;
+  for (const [k, v] of Object.entries(cost)) root.resources[k] -= v;
+  c.packUpgrade = (c.packUpgrade || 0) + PACK_STEP;
+  root.log(`${c.name.short}'s pack is stitched bigger: +${PACK_STEP} carrying room.`, 'good', c.id);
+  return '';
 }
 
 // --- Rift merchants (placed on floors by floors.js) ------------------------------------------
@@ -877,7 +988,12 @@ export function robMerchant(v, r) {
 export function economyDawn(game) {
   const root = game.root;
   const L = ledger(root);
-  L.days.push({ day: root.day - 1, spent: L.today });
+  // Net gold over the day, from the treasury itself: sales, loot and veins
+  // arrive by many roads that don't all pass through earn(), but they all
+  // land in resources.gold.
+  const gold = Math.round(root.resources.gold || 0);
+  L.days.push({ day: root.day - 1, spent: L.today, net: L.goldAtDawn != null ? gold - L.goldAtDawn : null });
+  L.goldAtDawn = gold;
   if (L.days.length > 14) L.days.shift();
   L.today = {};
   payDaily(root);

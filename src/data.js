@@ -226,6 +226,30 @@ export const RESOURCES = {
   potion:   { name: 'Potions',   color: '#e06ab0', cat: 'goods' },
 };
 export const RESOURCE_IDS = Object.keys(RESOURCES);
+// Where a resource comes from and what spends it, beyond what the data already
+// says (veins, recipes, crops and building costs are read off their tables).
+// Shown on every resource tooltip so "where does gold come from?" has an answer.
+export const RESOURCE_SOURCES = {
+  gold: ['🐫 Selling to caravans (World › Market) — most of a young camp\'s gold', '🌀 Rift loot, carried home', '🪙 Gold veins, mined', '🏪 Your own shops, once built'],
+  iron: ['⛏️ Iron veins', '🌀 Rift loot (mines and forges below)', '🐫 Caravans'],
+  gems: ['⛏️ Gem seams', '🌀 Rift loot'],
+  dust: ['⛏️ Crystal seams', '🌀 Rift loot (sanctums, hives)'],
+  relics: ['🌀 Rift loot and lair hoards'],
+  riftshard: ['🌀 Only below floor 1, and from lairs'],
+  leather: ['🔪 Butchering livestock', '🌀 Rift loot (warrens, hollows)', '⚒️ Worked Goods'],
+  knowledge: ['📚 Researchers at a Library', '💠 Rift shards carried home'],
+  potion: ['⚗️ An Alchemy Table', '🏪 The Apothecary'],
+};
+export const RESOURCE_USES = {
+  gold: ['🏗️ Shops and big buildings', '🧪 Potions and gear from shops', '🚪 Recruits at the gate', '📅 Wages for classed colonists and sellswords'],
+  leather: ['⚒️ Forge tiers (leather armour)', '🎒 Packs: more loot carried per delver'],
+  riftshard: ['📖 Turned into research when carried home'],
+  knowledge: ['🔬 Research'],
+  relics: ['🐫 Sold to caravans', '🏛️ Late wonders (Reliquary, Monument)'],
+  potion: ['🌀 Carried into the Rift: healing mid-fight'],
+  meal: ['🍽️ Eating — worth more than raw food'],
+  gear: ['⚒️ Forging and upgrading equipment'],
+};
 
 // --- Buildings --------------------------------------------------------------
 // cat groups them in the build bar. work = build effort in work-units.
@@ -247,9 +271,9 @@ export const BUILDINGS = {
   carpenter: { name: 'Carpenter Bench', cat: 'production',cost: { wood: 20, stone: 5 },    work: 50,  solid: false, glyph: 'n', job: 'craft', recipe: 'planks', desc: 'Makes cloth and worked goods.' },
   smithy:    { size: [2, 2], walled: true, name: 'Smithy',          cat: 'production',cost: { stone: 25, iron: 8 },    work: 80,  solid: false, glyph: 'm', job: 'craft', recipe: 'gear', desc: 'Forges weapons and armour.' },
   alchemy:   { name: 'Alchemy Table',   cat: 'production',cost: { wood: 15, gems: 3, herbs: 5 }, work: 70, solid: false, glyph: 'a', job: 'craft', recipe: 'potion', desc: 'Brews potions from herbs.' },
-  library:   { size: [3, 2], walled: true, name: 'Library',         cat: 'production',cost: { wood: 25, stone: 10, gold: 5 }, work: 90, solid: false, glyph: 'L', job: 'research', desc: 'Generates Insight for research.' },
+  library:   { size: [3, 2], walled: true, name: 'Library',         cat: 'production',cost: { wood: 30, stone: 10 }, work: 90, solid: false, glyph: 'L', job: 'research', desc: 'Generates Insight for research.' },
   infirmary: { size: [3, 2], walled: true, name: 'Infirmary',       cat: 'production',cost: { wood: 18, cloth: 8, herbs: 4 }, work: 60, solid: false, glyph: 'h', job: 'heal', desc: 'Treats wounds much faster.' },
-  training:  { name: 'Training Dummy',  cat: 'martial',   cost: { wood: 12, leather: 4 },  work: 40,  solid: false, glyph: 'x', job: 'train', desc: 'Raises Melee and Marksman.' },
+  training:  { name: 'Training Dummy',  cat: 'martial',   cost: { wood: 12, leather: 4 },  work: 40,  solid: false, glyph: 'x', job: 'train', desc: 'Peasants drill here until they are strong or quick enough for a Combat class. Classed fighters sharpen Melee and Marksman.' },
   shrine:    { name: 'Shrine',          cat: 'martial',   cost: { stone: 20, gold: 8 },    work: 65,  solid: false, glyph: 'A', job: 'pray', beauty: 6, desc: 'Faith training, mood buffer.' },
   barricade: { name: 'Barricade',       cat: 'martial',   cost: { wood: 8, stone: 4 },     work: 25,  solid: true,  glyph: 'X', hp: 240, desc: 'Cheap defensive block.' },
   watchpost: { name: 'Watchpost',       cat: 'martial',   cost: { wood: 15, stone: 10 },   work: 55,  solid: false, glyph: 'V', watch: 1, desc: 'Earlier raid warning, defence bonus.' },
@@ -259,7 +283,7 @@ export const BUILDINGS = {
   butchery:  { name: 'Butcher Block',   cat: 'farm',      cost: { wood: 15, iron: 4 },     work: 45,  solid: false, glyph: 'Ϟ', job: 'butcher', desc: 'Slaughter stock for meat and hide.' },
   compost:   { name: 'Compost Heap',    cat: 'farm',      cost: { wood: 8 },               work: 25,  solid: false, glyph: 'o', job: 'compost', desc: 'Restores fertility to nearby fields.' },
   field:     { name: 'Field',           cat: 'farm',      cost: { wood: 4 },               work: 22,  solid: false, glyph: '\u2261', job: 'farm', desc: 'Plant a crop. Yield depends on soil, water and season.' },
-  combat_school:    { size: [3, 3], walled: true, name: 'Combat School',    cat: 'martial',    cost: { wood: 60, stone: 40, iron: 10 },            work: 140, solid: false, glyph: 'C', school: 'combat', desc: 'Trains commoners into Fighters, Barbarians, Rogues, Rangers and Monks. Class XP up to level 10.' },
+  combat_school:    { size: [3, 3], walled: true, name: 'Combat School',    cat: 'martial',    cost: { wood: 40, stone: 30, iron: 4 },            work: 140, solid: false, glyph: 'C', school: 'combat', desc: 'Trains commoners into Fighters, Barbarians, Rogues, Rangers and Monks. Class XP up to level 10.' },
   mage_school:      { size: [3, 3], walled: true, name: 'Mage School',      cat: 'martial',    cost: { wood: 40, stone: 30, dust: 15, gems: 5 },   work: 150, solid: false, glyph: 'M', school: 'mage', desc: 'Trains Wizards, Warlocks, Bards and Artificers. Class XP up to level 10.' },
   temple:           { name: 'Temple',           cat: 'martial',    cost: { stone: 50, wood: 20, gold: 15 },            work: 150, solid: false, glyph: 'T', school: 'temple', beauty: 4, desc: 'Trains Clerics, Druids and Paladins. Class XP up to level 10.' },
   knight_academy:   { size: [4, 3], walled: true, name: 'Knight Academy',   cat: 'martial',    cost: { stone: 120, iron: 40, gold: 20 },           work: 260, solid: false, glyph: 'K', school: 'combat', academy: true, desc: 'Opens tiers 3–4 and prestige paths for combat classes. Class XP up to level 20.' },
@@ -339,7 +363,10 @@ export const RESEARCH = {
   letters:    { name: 'Letters',          cost: 180,  req: [],             unlock: ['library'],             bonus: { researchRate: 0.2 }, desc: 'Insight generation.' },
   drilling:   { name: 'Deep Drilling',    cost: 600,  req: ['smelting'],   unlock: [],                      bonus: { mineYield: 0.4 }, desc: '+40% mining yield.' },
   arcana1:    { name: 'Rift Lore',        cost: 420,  req: ['letters'],    unlock: [],                      bonus: { loot: 0.1, ward: 0.1 }, desc: 'Read the Rift: +10% loot, nightly waves 10% weaker.' },
-  drill_corps:{ name: 'Drill Corps',      cost: 520,  req: ['smelting'],   unlock: ['training','watchpost','combat_school'], bonus: { combat: 0.12 }, desc: 'Trained militia, and a school to train them.' },
+  // Classes are the heart of the game, so the first school sits at the root of
+  // the tree, one cheap project in (docs/progression-roadmap.md P0-1).
+  militia:    { name: 'Militia',          cost: 100,  req: [],             unlock: ['training','combat_school'], desc: 'Combat classes: a Combat School to train Fighters, Barbarians, Rogues, Rangers and Monks, and a Training Dummy to drill peasants toward them.' },
+  drill_corps:{ name: 'Drill Corps',      cost: 520,  req: ['militia', 'smelting'], unlock: ['watchpost'], bonus: { combat: 0.12 }, desc: 'Drilled militia: +12% combat, and watchposts to warn of raids.' },
   arcane_theory:{ name: 'Arcane Theory',  cost: 320,  req: ['letters'],    unlock: ['mage_school'],         desc: 'Magic can be taught. Opens the Mage School and the arcane peddlers.' },
   devotion:   { name: 'Devotion',         cost: 260,  req: [],             unlock: ['temple'],              desc: 'Faith, organised. Opens the Temple.' },
   martial_doctrine:{ name: 'Martial Doctrine', cost: 1000, req: ['drill_corps'], unlock: ['knight_academy'], desc: 'Knightly orders: tiers 3–4 for combat classes.' },

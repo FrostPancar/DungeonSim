@@ -171,7 +171,7 @@ export function moodStatus(mood) {
 /** Research projects, for the tech tree and its tooltips. */
 export const TECH_ICON = {
   masonry: '🧱', husbandry: '🍄', smelting: '🔥', herbalism: '🌿', letters: '📜',
-  drilling: '⛏️', arcana1: '🌀', drill_corps: '🛡️', wardstone: '🔮', relicry: '🏺',
+  drilling: '⛏️', arcana1: '🌀', drill_corps: '🛡️', militia: '🎓', wardstone: '🔮', relicry: '🏺',
   deepmaps: '🗺️', agriculture: '🌾', ranching: '🐄', stockbreed: '🐑', cartography: '🧭',
   logistics: '📦', arcane_theory: '🎓', devotion: '🙏', martial_doctrine: '🏰', high_arcana: '🔮', theology: '🕍',
   fortification: '🚧', siege_craft: '🏹', siege_mastery: '🎯', arcane_engineering: '🪄', archival_science: '📚',

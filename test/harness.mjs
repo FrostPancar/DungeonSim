@@ -3,6 +3,7 @@
 //   node test/harness.mjs            full suite
 //   node test/harness.mjs --bench    + longer performance / pacing runs
 //   node test/harness.mjs --seeds 20 widen the integration sweep
+//   node test/harness.mjs --only rift   just the suites whose name matches
 // ============================================================================
 import { RNG } from '../src/rng.js';
 import {
@@ -33,8 +34,8 @@ import { autoplayStep } from '../src/autoplay.js';
 import { TICKS_PER_DAY, TICKS_PER_HOUR, storageCap } from '../src/colony.js';
 import { Overworld, BIOMES, SITE_KINDS, classify } from '../src/overworld.js';
 import { CROPS, CROP_IDS, SEASONS, cropViability, recommendCrop, seasonOf, yearOf, growthStage, initSoil } from '../src/farming.js';
-import { ANIMALS, ANIMAL_IDS, createBeast, beastAsCombatant, beastPower, biomeSpecies, tameChance, butcherBeast, isMature, resetBeastIds, PACK_PER_LOAD, followersOf } from '../src/husbandry.js';
 import { packCap } from '../src/colony.js';
+import { ANIMALS, ANIMAL_IDS, createBeast, beastAsCombatant, beastPower, biomeSpecies, tameChance, butcherBeast, isMature, resetBeastIds, PACK_PER_LOAD, followersOf } from '../src/husbandry.js';
 import { PX, pxOf } from '../src/pixicons.js';
 import * as ECON from '../src/economy.js';
 import { makeTierItem } from '../src/items.js';
@@ -46,7 +47,11 @@ import { separateUnits, mapUnits, formationTiles } from '../src/occupancy.js';
 import { SpriteBook, spriteGridProblems, SPRITE_KEYS, ALLEGIANCE } from '../src/sprites.js';
 import { installDOM } from './dom-stub.mjs';
 import { testBundle } from './bundle-test.mjs';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { kw, traitSentiment, beastTraitSentiment } from '../src/keywords.js';
+import { advanceTutorial, noteTutorialEvent, tutorialState, TUTORIAL_STEPS, skipTutorialState } from '../src/tutorial.js';
+import { drillSession, drillTarget, DRILL_SESSIONS, classRequirement as classReqForTest } from '../src/classes.js';
+import { sendJourney, siteErrand, upgradePack, PACK_STEP } from '../src/economy.js';
 import { fileURLToPath } from 'node:url';
 import { UI } from '../src/ui.js';
 import { tipHtml, mapTipKey } from '../src/tips.js';
@@ -59,7 +64,10 @@ let passed = 0, failed = 0, suite = '';
 const fails = [];
 const C = { g: '\x1b[32m', r: '\x1b[31m', y: '\x1b[33m', d: '\x1b[90m', b: '\x1b[1m', x: '\x1b[0m' };
 
+// --only <text>: run just the suites whose name contains <text> (for iterating).
+const ONLY = (() => { const i = argv.indexOf('--only'); return i >= 0 ? argv[i + 1].toLowerCase() : null; })();
 function describe(name, fn) {
+  if (ONLY && !name.toLowerCase().includes(ONLY)) return;
   suite = name;
   console.log(`\n${C.b}${name}${C.x}`);
   fn();
@@ -1428,7 +1436,8 @@ describe('Founders, stamina and supplies', () => {
   const c0 = k.colonists[0];
   k.moveToMap(c0, fl, r.x + 3, r.y);
   for (let i = 0; i < 3; i++) tickFloorMonsters(kv);
-  ok(!!r.fleeing, 'a monster out of stamina stops hunting and heads home');
+  // Already at its post, it gets home the same tick it gives up and dozes off.
+  ok(!!r.fleeing || !r.awake, 'a monster out of stamina stops hunting and heads home', `fleeing ${r.fleeing} awake ${r.awake}`);
   // Supplies: stepping through the gate packs provisions; below, they eat from the pack.
   const s2 = new Game('supplies');
   const d = s2.colonists[0];
@@ -2091,13 +2100,15 @@ describe('Performance', () => {
 describe('Camp basics (available from day one)', () => {
   const g = new Game('camp-basics');
   const w = g.world;
-  const free = () => {
+  // Where the whole footprint fits, not just its first tile: a 2×2 shed must
+  // not be offered a spot that runs into the camp's starting furniture.
+  const free = (id) => {
     const [x, y] = findNearest(w, w.start.x, w.start.y,
-      (x, y) => w.walkable(x, y) && !w.building[w.idx(x, y)] && !w.feature[w.idx(x, y)], 20);
+      (x, y) => w.walkable(x, y) && !w.building[w.idx(x, y)] && !w.feature[w.idx(x, y)] && (!id || w.canPlace(id, x, y)), 20);
     return [x, y];
   };
   const place = (id) => {
-    const [x, y] = free();
+    const [x, y] = free(id);
     ok(g.build(x, y, id), `a ${BUILDINGS[id].name} can be queued on day one`);
     const i = w.idx(x, y);
     w.building[i].done = true; w.building[i].workLeft = 0; w.touch(); w.recomputeLight();
@@ -2139,7 +2150,7 @@ describe('Module integrity', () => {
   }
   ok(reachableResearch.size === Object.keys(RESEARCH).length, 'no research is orphaned behind an impossible prerequisite');
   const unlockables = new Set(Object.values(RESEARCH).flatMap(r => r.unlock));
-  const startUnlocked = new Set(['wall', 'door', 'bed', 'table', 'brazier', 'stockpile', 'farm', 'kitchen', 'carpenter', 'library', 'training',
+  const startUnlocked = new Set(['wall', 'door', 'bed', 'table', 'brazier', 'stockpile', 'farm', 'kitchen', 'carpenter', 'library',
     'timber_wall', 'rug', 'bedroll', 'campfire', 'torch', 'planter', 'bench', 'game_table', 'shelf', 'shed', 'well', 'scarecrow', 'stakes']);
   const orphanBuildings = Object.keys(BUILDINGS).filter(b => !unlockables.has(b) && !startUnlocked.has(b));
   ok(orphanBuildings.length === 0, 'every building is either available at start or unlocked by research', orphanBuildings.join(','));
@@ -2281,6 +2292,8 @@ describe('View layer (headless smoke test — no interactive client)', () => {
     ui.selectAt(walker.x, walker.y);
     ok(ui.squad.has(walker.id), 'a click on a floor selects the colonist standing there');
     ui.rightClickAt(fl.world.stairsUp.x, fl.world.stairsUp.y);
+    // Stairs are a tile you can also stand on, so right-click offers a menu; the way up leads it.
+    if (!(walker.order && walker.order.travel) && ui.ctxOpts && ui.ctxOpts[0]) ui.ctxOpts[0].run();
     ok(walker.order && walker.order.travel === 'up', 'right-clicking the stairs up sends the selection up them');
     ui.drawer = 'party'; ui.sigs.drawer = null; ui.renderDrawer();
     ok(true, 'the Rift tab renders with floors in play');
@@ -2296,6 +2309,109 @@ describe('View layer (headless smoke test — no interactive client)', () => {
     ok(!!ui.game.gameOver, 'the loss condition triggers and the end screen renders');
   } catch (e) {
     ok(false, 'view layer executes without throwing', `${e.message}\n${(e.stack || '').split('\n')[1] || ''}`);
+  }
+});
+
+describe('Onboarding & legibility', () => {
+  // Keywords: one look everywhere, coloured by what they do to you.
+  ok(traitSentiment('optimist') === 'good' && traitSentiment('pessimist') === 'bad', 'traits read as good or bad by their effect');
+  ok(traitSentiment('greedy') === 'mixed', 'a real trade-off reads as mixed');
+  ok(beastTraitSentiment('prize') === 'good' && beastTraitSentiment('runt') === 'bad', 'beast traits are judged the same way');
+  ok(/kw-good/.test(kw('trait', 'optimist')) && /data-tip="trait:optimist"/.test(kw('trait', 'optimist')), 'a trait chip carries its colour and tooltip');
+  ok(/<b>12<\/b>/.test(kw('res', 'wood', { qty: 12 })), 'a resource chip can lead with an amount');
+  // Classes come early: the Combat School sits at the root of the tree.
+  ok(RESEARCH.militia && RESEARCH.militia.req.length === 0 && RESEARCH.militia.unlock.includes('combat_school'), 'the Combat School is one root research away');
+  ok(RESEARCH.militia.unlock.includes('training') && !RESEARCH.drill_corps.unlock.includes('training'), 'the Training Dummy comes with the school it feeds, and only once');
+  {
+    const g = new Game('onboard-start');
+    ok((g.reagents.class_tome || 0) === 1, 'a new camp starts with one Class Tome');
+    ok(!g.unlocked.has('training') && !g.unlocked.has('combat_school'), 'schools and the dummy wait for Militia');
+    ok(!BUILDINGS.library.cost.gold, 'the Library costs no gold: research never waits on coin');
+    // A peasant who reads the tome graduates out of peasantry.
+    const p = g.colonists.find(c => c.peasant);
+    const k = Object.keys(CLASSES).find(k => !classReqForTest(p, k) && k !== p.klass && ['fighter', 'rogue', 'ranger', 'barbarian', 'monk', 'wizard', 'cleric', 'druid', 'bard', 'warlock', 'paladin', 'artificer'].includes(k));
+    ok(k && g.readTome(p.id, k) === '', 'a peasant can read the starting tome', k);
+    p.training.progress = p.training.need - 1;   // a day's reading, minus the night that could kill them
+    for (let i = 0; i < TICKS_PER_HOUR * 2; i++) g.step();
+    ok(!p.peasant && p.tree && p.klass === k, 'a graduate is no longer a peasant', `${p.title} ${p.klass}`);
+    ok(g.stats.graduates === 1, 'graduations are counted');
+  }
+  {
+    // Drilling lifts a Combat attribute toward the bar, and stops there.
+    const g = new Game('drill');
+    const p = g.colonists.find(c => c.peasant);
+    for (const a of ['str', 'dex']) p.attributes[a] = 9;
+    const before = drillTarget(p);
+    ok(before && before.value === 9, 'a weak peasant has something to drill toward');
+    for (let i = 0; i < DRILL_SESSIONS * 5; i++) drillSession(p);
+    ok(drillTarget(p) === null && Math.max(p.attributes.str, p.attributes.dex) === 12, 'drilling stops once a Combat class is open', `${p.attributes.str}/${p.attributes.dex}`);
+  }
+  {
+    // The first caravan comes by day 3, and the ledger tracks the treasury's net.
+    const g = new Game('caravan-guarantee');
+    let met = false;
+    for (let i = 0; i < TICKS_PER_DAY * 3.5 && !met; i++) { g.step(); if (g.caravan) met = true; }
+    ok(met, 'a caravan arrives within the first three and a half days');
+    ok(g.ledger.days.some(d => d.net != null), 'each dawn records the day\'s net gold');
+  }
+  {
+    // The tutorial walks forward on real play, and skipping it silences it.
+    const g = new Game('tut');
+    const t = tutorialState(g);
+    ok(t.step === 0 && !t.skipped, 'a new game starts the tutorial');
+    noteTutorialEvent(g, 'harvest');
+    advanceTutorial(g);
+    ok(t.step >= 1, 'a harvest order completes the first step');
+    for (let i = 0; i < TICKS_PER_DAY * 6; i++) { autoplayStep(g); g.step(); if (i % 200 === 0) advanceTutorial(g); }
+    advanceTutorial(g);
+    ok(t.step >= 4, 'auto-play carries the tutorial through its early steps', `${t.step}/${TUTORIAL_STEPS.length} (${TUTORIAL_STEPS[t.step] ? TUTORIAL_STEPS[t.step].id : 'done'})`);
+    ok(t.tips.length > 0 && new Set(t.tips).size === t.tips.length, 'first-time tips fire, each once', t.tips.join(','));
+    const g2 = new Game('tut-skip');
+    skipTutorialState(g2);
+    ok(advanceTutorial(g2).completed.length === 0, 'a skipped tutorial completes nothing');
+  }
+  {
+    // The world map pays: resource sites can be gathered from, for free.
+    const g = new Game('errands');
+    const ow = g.overworld;
+    for (const st of ow.sites) st.discovered = true;
+    const node = ow.sites.filter(st => siteErrand(st) === 'gather').sort((a, b) => a.dist - b.dist)[0];
+    ok(!!node, 'some site on the map offers a Gather errand');
+    const c = g.colonists.find(x => x.peasant);
+    const res = SITE_KINDS[node.kind].node, before = g.resources[res] || 0, gold0 = g.resources.gold;
+    ok(sendJourney(g, [c.id], node.id, 'gather') === '' && c.away, 'a party sets out to gather, free of charge');
+    ok(g.resources.gold === gold0, 'gathering costs no gold');
+    ok(sendJourney(g, [g.colonists.find(x => !x.away).id], node.id, 'search') !== '', 'a site only offers its own errand');
+    for (let i = 0; i < TICKS_PER_DAY * 6 && c.away; i++) g.step();
+    ok(!c.away && (g.resources[res] || 0) > before, 'the party comes home with the site\'s goods', `${res} ${before} → ${g.resources[res]}`);
+    ok(node.gathered === 1 && g.stats.journeys === 1, 'the site remembers it was worked');
+    const ruin = ow.sites.find(st => siteErrand(st) === 'search');
+    if (ruin) ok(siteErrand({ ...ruin, searched: true }) === null, 'a ruin can only be searched once');
+  }
+  {
+    // Leather has a job: bigger packs carry more loot out of the Rift.
+    const g = new Game('packs');
+    const hero = g.colonists.find(c => c.tree);
+    const cap0 = packCap(hero);
+    g.resources.leather = 100; g.resources.cloth = 100;
+    ok(upgradePack(g, hero.id) === '' && packCap(hero) === cap0 + PACK_STEP, 'stitching a pack adds carrying room', `${cap0} → ${packCap(hero)}`);
+    ok(g.resources.leather < 100, 'and spends leather');
+  }
+  {
+    // The first lair always pays a Class Tome, and the UI gets a record of the hoard.
+    const g = new Game('lair-reward');
+    const fl = g.ensureFloor(1), v = g.viewOf(fl);
+    const boss = fl.raiders.find(r => r.lairBoss) || fl.raiders[0];
+    const t0 = g.reagents.class_tome || 0;
+    v.onLairBroken(boss);
+    ok(g.stats.lairs === 1 && g.reagents.class_tome === t0 + 1, 'the first lair broken yields a Class Tome');
+    ok(g.lastLair && g.lastLair.depth === 1 && g.lastLair.tome, 'the hoard is recorded for the reward card');
+    v.onLairBroken(boss);
+    ok(g.reagents.class_tome === t0 + 1, 'later lairs don\'t repeat the tome');
+  }
+  for (const f of ['ui.js', 'tips.js']) {
+    const src = readFileSync(fileURLToPath(new URL('../src/' + f, import.meta.url)), 'utf8');
+    ok(!/TRAITS\[t\]\.name/.test(src), `${f} draws traits through kw(), not by name`);
   }
 });
 

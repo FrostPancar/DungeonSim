@@ -1,6 +1,6 @@
 # Rift Gate — Tutorial Roadmap
 
-*Status: **proposal** (2026-09-24). Nothing here is built. It follows the progression spine in `docs/progression-roadmap.md` §2, and uses the UI pieces in `docs/ui-roadmap.md`.*
+*Status: **built** (2026-09-24) in `src/tutorial.js`: the ten-step tracker, first-time tips, skip and replay. The research step became "Build a Library", because research can't start without one. It follows the progression spine in `docs/progression-roadmap.md` §2, and uses the UI pieces in `docs/ui-roadmap.md`.*
 
 ## 1. What exists today
 
@@ -31,7 +31,7 @@ The tracker is a pinned card at the top of the alert stack: an icon, one line of
 | 1 | Mark trees to cut — drag over them. | Build → 🌿 Harvest tool | ≥ 5 `harvest` designations | Wood builds almost everything. | — |
 | 2 | Place beds for everyone before dusk. | Build → Furniture → Bedroll | beds/bedrolls ≥ colonists | Sleeping on the ground sours the mood. | +10 cloth |
 | 3 | Survive the night. The Rift spawns at dusk. | Clock / threat meter | first dawn after a wave | Every night a wave comes. Walls and fighters hold it. | — |
-| 4 | Pick a research project. | Research tab | `research.current` set | Research unlocks buildings and classes. | — |
+| 4 | Build a Library (Build › Production): research needs one. | Build tab | a Library stands or is queued | Research unlocks buildings and schools. Try Militia. | — |
 | 5 | Send a party into the Rift. | The Rift Gate on the map | the first colonist reaches floor 1 | Delvers carry loot home in their packs. | — |
 | 6 | Break the lair before the Rift deepens. | The lair card (Rift tab) | the first `lairReward` | Lairs give a hoard and two quiet nights. | Guaranteed Class Tome |
 | 7 | Read the Class Tome — make a peasant a hero. | That peasant's portrait → the Class action | the first `training` starts | Classes give skills, a tree, and better gear. | — |

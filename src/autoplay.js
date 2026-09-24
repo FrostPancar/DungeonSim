@@ -9,7 +9,7 @@ import { storageCap, packRoom } from './colony.js';
 import { STANCES } from './expedition.js';
 import { partyPower } from './expedition.js';
 import { powerOf, refresh } from './npc.js';
-import { autoAllocate, pointsFree } from './classes.js';
+import { autoAllocate, pointsFree, CLASS_INFO, classRequirement } from './classes.js';
 import { canEquip, itemScore } from './items.js';
 import { PRICES } from './events.js';
 import { ANIMALS, isMature, herdCap } from './husbandry.js';
@@ -20,7 +20,7 @@ import {
   levelOf, MAX_LEVEL, upgradeCost, orderUpgrade, bless, festival, KEPT_SHOPS, keeperOf, assignKeeper,
 } from './economy.js';
 
-const RESEARCH_ORDER = ['masonry', 'husbandry', 'agriculture', 'letters', 'smelting', 'commerce', 'ranching', 'logistics', 'arcana1', 'herbalism', 'grand_works', 'cartography', 'drill_corps', 'coinage', 'stockbreed', 'drilling', 'devotion', 'wardstone', 'deepmaps', 'relicry'];
+const RESEARCH_ORDER = ['militia', 'masonry', 'husbandry', 'agriculture', 'letters', 'smelting', 'commerce', 'ranching', 'logistics', 'arcana1', 'herbalism', 'grand_works', 'cartography', 'drill_corps', 'coinage', 'stockbreed', 'drilling', 'devotion', 'wardstone', 'deepmaps', 'relicry'];
 
 // Target counts of each building, as a function of population.
 function wants(game) {
@@ -44,8 +44,9 @@ function wants(game) {
     ['smithy', game.unlocked.has('smithy') ? 1 : 0],
     ['alchemy', game.unlocked.has('alchemy') ? 1 : 0],
     ['infirmary', game.unlocked.has('infirmary') ? 1 : 0],
-    ['training', 1],
+    ['training', game.unlocked.has('training') ? 1 : 0],
     ['watchpost', game.unlocked.has('watchpost') ? 2 : 0],
+    ['combat_school', game.unlocked.has('combat_school') ? 1 : 0],
     ['shrine', game.unlocked.has('shrine') ? 1 : 0],
     ['reliquary', game.unlocked.has('reliquary') ? 1 : 0],
     ['armory', game.unlocked.has('armory') ? 1 : 0],
@@ -119,6 +120,19 @@ export function autoplayStep(game, opts = {}) {
       if (game.research.done.has(id)) continue;
       if (!RESEARCH[id].req.every(q => game.research.done.has(q))) continue;
       game.setResearch(id); break;
+    }
+  }
+
+  // --- classes: one student at a time; peasants go first, two stay to labour ---
+  if (!game.colonists.some(c => c.training)) {
+    const peasants = game.colonists.filter(c => c.peasant && !c.dead && !c.away);
+    const tome = (game.reagents.class_tome || 0) > 0;
+    if (peasants.length > 2) for (const c of peasants) {
+      const k = Object.keys(CLASS_INFO).find(k => !classRequirement(c, k) && game.hasSchool(CLASS_INFO[k].school))
+        || (tome && Object.keys(CLASS_INFO).find(k => !classRequirement(c, k)));
+      if (!k) continue;
+      if (game.hasSchool(CLASS_INFO[k].school)) game.enroll(c.id, k); else game.readTome(c.id, k);
+      break;
     }
   }
 
@@ -435,7 +449,9 @@ function autoSpend(game) {
   // Healing draughts on the shelf.
   if (S.apothecary && S.apothecary.potions) {
     for (const id of ['greater_healing', 'minor_healing', 'antidote']) {
-      while (game.potionCount(id) < 3 && S.apothecary.potions[id] > 0 && gold() > potionPrice(id) + reserve) buyPotion(game, S.apothecary, id);
+      // A refusal (the counter is shut while its keeper is away) changes
+      // nothing the loop tests, so stop at the first one or spin forever.
+      while (game.potionCount(id) < 3 && S.apothecary.potions[id] > 0 && gold() > potionPrice(id) + reserve) if (buyPotion(game, S.apothecary, id)) break;
     }
   }
   // Grow a building: workshops that feed research and gear first, then the shops.

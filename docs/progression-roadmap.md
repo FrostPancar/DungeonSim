@@ -1,6 +1,6 @@
 # Rift Gate — Progression & Teaching Roadmap
 
-*Status: **proposal** (2026-09-24). Nothing here is built. Companion docs: `docs/tutorial-roadmap.md` (the guided first hours) and `docs/ui-roadmap.md` (how it all looks).*
+*Status: **mostly built** (2026-09-24). Built: P0-1 (Militia, cheaper Combat School, starting Class Tome, graduates stop being peasants), P0-2 (dummy drilling toward a Combat class), P0-3 (lair goal card, reward card, first-lair Class Tome, "Stash" for spare items, loot in packs shown), P0-4 (where-from / what-for on every resource, gold leads the resource bar with a per-day net, first caravan guaranteed by day 3, Library costs no gold), P1-1 in part (leather → bigger packs), P1-2 in part (class techs labelled by outcome), P1-3 (Gather / Search / Pilgrimage / Survey / Clear errands, ! on the map). Not yet: relic shrine, the Rift-shard choice, early gem/dust crafts, regrouping the tree by purpose, P2. Companion docs: `docs/tutorial-roadmap.md` (the guided first hours) and `docs/ui-roadmap.md` (how it all looks).*
 
 This doc is the "what the player should be doing, and when" plan. It covers:
 - the five problems players report;

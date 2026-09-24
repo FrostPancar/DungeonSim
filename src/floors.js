@@ -663,6 +663,15 @@ export function lairReward(v, boss) {
   if (l.items.length < 2) v.armory.push(...rollLoot(rng, { loot: B.loot }, tier + 1, 4).items.slice(0, 2 - l.items.length));
   v.rift.quietNights = 2;
   v.log(`F${m.depth}: the lair is broken. Its hoard spills out, and the Rift reels — no wave for two nights.`, 'major');
+  // The first lair always yields a Class Tome: breaking the Rift is how a camp
+  // turns its peasants into heroes, so the first win should say so.
+  const root = v.root || v;
+  root.stats.lairs = (root.stats.lairs || 0) + 1;
+  if (root.stats.lairs === 1) {
+    root.reagents.class_tome = (root.reagents.class_tome || 0) + 1;
+    v.log('Among the hoard: a Class Tome. Anyone who reads it can become a new class.', 'good');
+  }
+  root.lastLair = { tick: root.tick, depth: m.depth, biome: m.biome, loot: { ...l.resources, riftshard: 4 + (m.depth || 1) }, items: l.items.length + 1, tome: root.stats.lairs === 1 };
 }
 
 /** Everyone out of a pack and into the stores — they made it back to camp. */

@@ -4,6 +4,7 @@
 // exist while the build tool is active.
 // ============================================================================
 import { Game, STANCES, TICKS_PER_DAY, historyDay, RIFT_RANKS, RIFT_DAYS_PER_LEVEL } from './game.js';
+import { packCap, moodBreakdown } from './colony.js';
 import { clamp } from './rng.js';
 import { Renderer, drawOverworld, overworldHit, TILE_MIN, TILE_MAX, tileThumb } from './render.js';
 import { DAMAGE_TYPES, TAGS, STATUSES } from './elements.js';
@@ -13,13 +14,15 @@ import { beltSize } from './expedition.js';
 import { BIOMES_RIFT } from './biomes.js';
 import { bookRequirement, bookPrice, scrollPrice, partCost, spellBudget, writeCost, SPELL_FORMS, SPELL_ELEMENTS, SPELL_MODS } from './magic.js';
 import { PRESTIGE_PATHS } from './prestige.js';
-import { tiersOf, classRequirement, TREES, CLASS_INFO, PRESTIGE, SCHOOLS, LOADOUT_SLOTS, TIER_LEVELS, TIER_CAP, LEVEL_CAP, treeNodes, nodeTier, tierOpen, canBuy, buyNode, toggleLoadout, resetTree, pointsFree, xpToNext } from './classes.js';
+import { tiersOf, classRequirement, drillTarget, TREES, CLASS_INFO, PRESTIGE, SCHOOLS, LOADOUT_SLOTS, TIER_LEVELS, TIER_CAP, LEVEL_CAP, treeNodes, nodeTier, tierOpen, canBuy, buyNode, toggleLoadout, resetTree, pointsFree, xpToNext } from './classes.js';
 import { autoplayStep } from './autoplay.js';
 import {
   BUILDINGS, FLOORS, RESOURCES, SKILLS, SKILL_IDS, TRAITS, RACES, CLASSES, ATTRS, ATTR_NAMES,
   RESEARCH, dispositionOf, THOUGHTS, ABILITIES, DUNGEON_THEMES,
 } from './data.js';
 import { TERRAIN, FEATURES, findPath } from './world.js';
+import { kw, kwList, kwCost, traitSentiment } from './keywords.js';
+import { noteTutorialEvent, currentStep, stepText, advanceTutorial, skipTutorialState, restartTutorialState, tutorialState, TUTORIAL_STEPS } from './tutorial.js';
 
 // Things laid in runs by dragging; placing one of these keeps build mode on.
 const LINE_BUILDS = new Set(['wall', 'timber_wall', 'door', 'fence', 'palisade', 'stakes', 'barricade', 'farm', 'field', 'mushroom']);
@@ -46,7 +49,7 @@ import {
   buyItem, sellItem, buyPotion, sellPotion, buyBeast, hireMerc, dismissMerc, buyCurio, CURIO_PRICES, sellTrophy, TROPHY_PRICE,
   sellToPilgrims, commission, commissionPrice, RIFT_MERCHANTS, dailyCosts, ledger, vaultSafe, BLESSINGS, blessingCost, bless,
   raiseCost, raiseDead, festivalCost, festival, trainCost, paidTraining, RUMOUR_COST, buyRumour, ERRANDS, journeyDays, errandCost,
-  sendJourney, tradingPostLevel, setOrder, UPGRADES, levelOf, upgradeCost, upgradeBlocker, orderUpgrade, cancelUpgrade, MAX_LEVEL,
+  sendJourney, siteErrand, siteRewardPreview, clearOdds, upgradePack, packUpgradeCost, PACK_STEP, PACK_MAX, tradingPostLevel, setOrder, UPGRADES, levelOf, upgradeCost, upgradeBlocker, orderUpgrade, cancelUpgrade, MAX_LEVEL,
   FORGE_COST, forgeCost, forgeBlocker, forgeTier, merchantStock, merchantBuy, merchantSellPacks, merchantReforge, robMerchant,
   reforgeCost, MAP_PRICE, KEY_PRICE, KEPT_SHOPS, keeperOf, keptNow, assignKeeper, shopStatus,
 } from './economy.js';
@@ -120,6 +123,16 @@ const pct = (v) => Math.round(v * 100) + '%';
 /** A cost as icons and numbers: "🪙 70 · 🪵 20". */
 const costLine = (cost) => Object.entries(cost).filter(([, v]) => v > 0).map(([k, v]) => `${RESOURCE_ICON[k] || ''} ${v}`).join(' · ');
 const hasAllOf = (g, cost) => Object.entries(cost).every(([k, v]) => (g.resources[k] || 0) >= v);
+
+// What a tech is *for*, when that matters more than its flavour name: the
+// class line reads as classes, so the way to a Fighter can be found by eye.
+const SCHOOL_OUTCOME = { combat_school: 'Combat classes', mage_school: 'Mage classes', temple: 'Divine classes',
+  knight_academy: 'Combat prestige', wizardry_academy: 'Mage prestige', cathedral: 'Divine prestige' };
+function techOutcome(id) {
+  const R = RESEARCH[id];
+  const hit = R && R.unlock.find(b => SCHOOL_OUTCOME[b]);
+  return hit ? '🎓 ' + SCHOOL_OUTCOME[hit] : '';
+}
 
 function sectHtml(title, meta = '') {
   return `<div class="sect"><span>${title}</span>${meta !== '' && meta != null ? `<em>${meta}</em>` : ''}</div>`;
@@ -270,6 +283,8 @@ export class UI {
 
   // ---------------------------------------------------------------- input --
   bind() {
+    // <details> toggles don't bubble; catch them on the way down.
+    document.addEventListener('toggle', (e) => this.noteFold(e.target), true);
     const cv = $('#map');
     this.renderer = new Renderer(cv, this.game);
     this.renderer.resize();
@@ -456,6 +471,8 @@ export class UI {
         if (!$('#help').classList.contains('hidden')) { this.hide('#help'); return; }
         if (this.tool.mode !== 'select') { this.setTool({ mode: 'select' }); return; }
         if (!$('#buildpick').classList.contains('hidden')) { this.hide('#buildpick'); this.renderRail(); return; }
+        // A panel about a thing (a tile, a site, a foe) goes before the window behind it.
+        if (this.sel && !['colonist', 'squad'].includes(this.sel.kind)) { this.closeInspector(false); return; }
         if (this.drawer) { this.drawer = null; this.renderRail(); this.renderDrawer(); return; }
         if (!$('#options').classList.contains('hidden')) { this.hide('#options'); return; }
         if (!$('#gamemenu').classList.contains('hidden')) { this.hideGameMenu(); return; }
@@ -477,6 +494,12 @@ export class UI {
         this.renderTop();
       }
       else if (k === 'c') { this.drawer = this.drawer === 'colony' ? null : 'colony'; this.renderRail(); this.renderDrawer(); }
+      else if (k === 'r' || k === 't' || k === 'n') {
+        // Every main tab has a key: Research, the Rift (T), the World (N).
+        const grp = { r: 'research', t: 'party', n: 'region' }[k];
+        this.drawer = UI.groupOf(this.drawer) === grp ? null : (this.lastSub && this.lastSub[grp]) || grp;
+        this.sigs.drawer = null; this.hide('#buildpick'); this.renderRail(); this.renderDrawer();
+      }
       else if (k === '?' || k === '/') this.toggleHelp();
       else if (k === 'arrowleft') this.renderer.camX -= 4;
       else if (k === 'arrowright') this.renderer.camX += 4;
@@ -560,6 +583,8 @@ export class UI {
     });
     // Alerts act on what they describe: people alerts select those people.
     $('#alerts').addEventListener('click', (e) => {
+      if (e.target.closest('[data-more]')) { this.alertsOpen = !this.alertsOpen; this.sigs.alerts = null; this.renderAlerts(); return; }
+      if (e.target.closest('[data-tut-skip]')) { this.skipTutorial(); return; }
       const b = e.target.closest('.al'); if (!b) return;
       const a = (this.alertList || [])[+b.dataset.i];
       if (!a) return;
@@ -810,6 +835,7 @@ export class UI {
     // Placing a building ends build mode. Walls, fences and the like are drawn
     // in runs, so those keep the tool until Esc.
     if (n && t.mode === 'build' && !LINE_BUILDS.has(t.id)) { this.setTool({ mode: 'select' }); this.hide('#buildpick'); }
+    if (n) noteTutorialEvent(this.game, t.mode === 'build' ? 'build:' + t.id : t.mode);
     else this.flash(`Nothing there to ${t.mode === 'build' ? 'build on' : t.mode === 'floor' ? 'lay a floor on' : t.mode}`, 'warn');
     return n;
   }
@@ -926,6 +952,7 @@ export class UI {
     });
     this.ctxOpts = opts;
     box.classList.remove('hidden');
+    if (typeof innerWidth !== 'number') return;   // headless: no viewport to place it in
     const mx = (this.mouse && this.mouse.x) || innerWidth / 2, my = (this.mouse && this.mouse.y) || innerHeight / 2;
     const r = box.getBoundingClientRect();
     box.style.left = `${Math.min(mx + 4, innerWidth - r.width - 8)}px`;
@@ -1084,12 +1111,42 @@ export class UI {
       if (r) this.sel = { kind: 'enemy', ref: r };
       else if (b) this.sel = { kind: 'beast', id: b.id, ref: b };
       else if (g._m.kind === 'camp' && this.onGate(x, y)) { this.drawer = 'party'; this.sigs.drawer = null; this.hide('#buildpick'); this.renderRail(); this.renderDrawer(); return; }
-      else if (g.world.inside(x, y)) this.sel = { kind: 'tile', x, y };
-      else this.sel = null;
+      else if (g.world.inside(x, y) && this.tileWorthInspecting(x, y)) this.sel = { kind: 'tile', x, y };
+      else {
+        // Bare ground has nothing to read or order: a click there dismisses
+        // whatever was open instead of opening a panel about grass.
+        this.closeInspector(false);
+        return;
+      }
     }
     this.renderer.selection = this.sel;
     this.sigs.insp = null;
     this.renderInspector();
+  }
+  /**
+   * A "Details ▾" fold: panels lead with what matters and tuck reference data
+   * away. Open/closed is remembered per key, so a reader who wants the numbers
+   * only opens it once.
+   */
+  fold(key, label, html) {
+    if (!this.folds) { try { this.folds = JSON.parse(storeGet('riftgate.folds') || '{}'); } catch (e) { this.folds = {}; } }
+    return `<details class="fold" data-fold="${key}"${this.folds[key] ? ' open' : ''}><summary>${label}</summary>${html}</details>`;
+  }
+  noteFold(d) {
+    if (!d || !d.dataset || !d.dataset.fold) return;
+    if (!this.folds) this.folds = {};
+    this.folds[d.dataset.fold] = d.open;
+    storeSet('riftgate.folds', JSON.stringify(this.folds));
+  }
+  /** Does this tile hold anything a panel could say or order? Plain ground doesn't. */
+  tileWorthInspecting(x, y) {
+    const w = this.mv.world, i = w.idx(x, y);
+    if (w.building[i] || w.feature[i] || w.designation[i]) return true;
+    if (w.floor && w.floor[i]) return true;
+    if (TERRAIN[w.terrain[i]].mineable) return true;
+    if (w.isRift && w.isRift(x, y)) return true;
+    for (const s of [w.stairsUp, w.stairsDown, w.lair]) if (s && s.x === x && s.y === y) return true;
+    return (this.mv.ground || []).some(p => p.x === x && p.y === y);
   }
   closeInspector(dropSquad = true) {
     this.sel = null;
@@ -1270,10 +1327,71 @@ export class UI {
         this.renderInspector(); this.renderDrawer(); this.renderRail();
       }
       this.tickTips(now);
+      this.checkMoments();
       if (g.gameOver) this.showGameOver();
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
+  }
+
+  /** The tutorial tracker: pinned above the alerts, a step's words and a row of pips. */
+  tutorialCardHtml(a, i) {
+    const t = tutorialState(this.game);
+    const pips = TUTORIAL_STEPS.map((s, k) => `<i class="${k < t.step ? 'on' : k === t.step ? 'now' : ''}"></i>`).join('');
+    return `<div class="al tut" data-i="${i}" title="${a.drawer ? 'Click to open' : ''}">
+      <span class="ai">${a.icon}</span><div class="tut-b"><div class="tut-h"><span>Getting started · ${t.step + 1}/${TUTORIAL_STEPS.length}</span><button data-tut-skip="1" title="Skip the tutorial (replay it from the ? help)">Skip</button></div>
+      <div class="at">${esc(a.text)}</div><div class="tut-p">${pips}</div></div></div>`;
+  }
+  skipTutorial() {
+    skipTutorialState(this.game); this.sigs.alerts = null; this.renderAlerts(); this.pulseTarget(null);
+    this.flash('Tutorial skipped. Replay it any time from the ? help.', 'info');
+  }
+  /** Ring the thing a tutorial step is about; one ring at a time. */
+  pulseTarget(sel) {
+    if (this.pulseSel === sel) return;
+    for (const e of document.querySelectorAll('.tut-pulse')) e.classList.remove('tut-pulse');
+    this.pulseSel = sel;
+    if (sel) { const e = document.querySelector(sel); if (e) e.classList.add('tut-pulse'); }
+  }
+
+  /** Big moments get a card of their own, not just a log line. */
+  checkMoments() {
+    const g = this.game;
+    const now = performance.now();
+    if (now - (this.lastTut || 0) > 500) {
+      this.lastTut = now;
+      const r = advanceTutorial(g);
+      for (const s of r.completed) this.toast(`✓ ${s.why}`, 'good');
+      for (const tip of r.tips) this.toast(`💡 ${tip.text}`, 'info');
+      if (r.finished) this.toast('🎉 That’s the basics. The rest is yours to find.', 'good');
+      if (r.completed.length) this.sigs.alerts = null;
+      const step = currentStep(g);
+      this.pulseTarget(step && !(step.drawer && this.drawer === step.drawer) ? step.target : null);
+    }
+    const L = g.lastLair;
+    if (L && L.tick !== this.seenLairTick) {
+      this.seenLairTick = L.tick;
+      if (L.tick < g.tick - TICKS_PER_DAY / 4) return;   // an old one from a loaded save
+      const m = $('#modal');
+      m.innerHTML = `<div class="mbox lair-win">
+        <div class="lw-ic">🏆</div>
+        <h2>The lair on floor ${L.depth} is broken</h2>
+        <div class="mini">Its hoard lies where the boss fell. Your delvers carry it home: loot counts once it's walked out of the Rift.</div>
+        <div class="goal-rw">${Object.entries(L.loot).filter(([, q]) => q > 0).map(([k, q]) => kw('res', k, { qty: Math.round(q) })).join('')}
+          <span class="kw kw-good"><i>⚔️</i>${L.items} piece${L.items === 1 ? '' : 's'} of gear to the stash</span>
+          <span class="kw kw-good"><i>🌙</i>No wave for 2 nights</span>
+          ${L.tome ? '<span class="kw kw-good"><i>📕</i>A Class Tome — turn a peasant into a hero</span>' : ''}</div>
+        <div class="mini">The Rift deepens every ${RIFT_DAYS_PER_LEVEL} days, and a new lair waits at the new bottom.</div>
+        <div class="ct-row" style="justify-content:flex-end;margin-top:12px">
+          ${L.tome ? '<button class="act" data-lw="classes">🎓 Choose who reads it</button>' : ''}<button class="act primary" data-lw="close">Onward</button></div></div>`;
+      this.show('#modal');
+      m.onclick = (e) => {
+        const b = e.target.closest && e.target.closest('[data-lw]');
+        if (e.target.id !== 'modal' && !b) return;
+        this.hide('#modal'); m.onclick = null;
+        if (b && b.dataset.lw === 'classes') this.openDrawer('classes');
+      };
+    }
   }
 
   // ------------------------------------------------------------- top bar --
@@ -1297,17 +1415,24 @@ export class UI {
     // Top-left resource readout: icon, count, and a sliver of fill against the
     // storage ceiling — the ceiling is what silently throws hauls away.
     const cap = g.storageCap;
-    const keys = ['food', 'meal', 'wood', 'stone', 'iron', 'cloth', 'leather', 'herbs', 'gold', 'gems', 'dust', 'relics', 'gear', 'potion'];
-    const sig = keys.map(k => Math.floor(g.resources[k] || 0)).join(',') + '|' + cap;
+    // Gold leads: it's the resource with the least obvious source, so it
+    // carries its own trend — the net of the last day at the treasury.
+    const keys = ['gold', 'food', 'meal', 'wood', 'stone', 'iron', 'cloth', 'leather', 'herbs', 'gems', 'dust', 'relics', 'gear', 'potion'];
+    const lastDay = ((g.ledger && g.ledger.days) || []).filter(d => d.net != null).slice(-1)[0];
+    const sig = keys.map(k => Math.floor(g.resources[k] || 0)).join(',') + '|' + cap + '|' + (lastDay ? lastDay.net : '');
     if (this.sigs.res !== sig) {
       this.sigs.res = sig;
       const fd = this.foodDays();
-      $('#res').innerHTML = keys.filter(k => ['food', 'meal', 'wood', 'stone'].includes(k) || (g.resources[k] || 0) >= 1).map((k, i) => {
+      $('#res').innerHTML = keys.filter(k => ['gold', 'food', 'meal', 'wood', 'stone'].includes(k) || (g.resources[k] || 0) >= 1).map((k, i) => {
         const v = Math.floor(g.resources[k] || 0);
         const frac = Math.max(0, Math.min(1, v / cap));
         const low = (k === 'food' && fd < 2.5) || (k === 'meal' && v < 4);
         const full = v > cap;
-        return `<div class="rr${low ? ' low' : ''}${full ? ' full' : ''}${k === 'wood' ? ' sep' : ''}" data-tip="res:${k}">
+        if (k === 'gold') {
+          const n = lastDay ? lastDay.net : null;
+          return `<div class="rr gold-rr" data-tip="res:gold"><span class="ci">${RESOURCE_ICON.gold}</span><i>${v}</i>${n != null ? `<em class="${n >= 0 ? 'up' : 'dn'}">${n >= 0 ? '+' : ''}${n}/d</em>` : '<em></em>'}</div>`;
+        }
+        return `<div class="rr${low ? ' low' : ''}${full ? ' full' : ''}${k === 'food' ? ' sep' : ''}" data-tip="res:${k}">
           <span class="ci">${RESOURCE_ICON[k]}</span><i>${v}</i><u><s style="width:${Math.round(frac * 100)}%;background:${RESOURCES[k].color}"></s></u></div>`;
       }).join('');
     }
@@ -1462,7 +1587,9 @@ export class UI {
     const idle = home.filter(c => labourOf(c) === 'off' && c.task && c.task.kind === 'wander');
     const fd = this.foodDays();
     const over = ['wood', 'stone', 'food', 'iron'].filter(k => (g.resources[k] || 0) > g.storageCap);
+    const step = this.mapId === 0 ? currentStep(g) : null;
     return [
+      step && { icon: step.icon, text: stepText(g, step), kind: 'tut', drawer: step.drawer, step },
       g.raiders.some(r => r.hp > 0) && { icon: '👹', text: `Rift spawn! ${g.raiders.filter(r => r.hp > 0).length} in the camp`, kind: 'critical' },
       home.some(c => c.tree && pointsFree(c) > 0) && { icon: '⭐', text: `Skill points to spend: ${home.filter(c => c.tree && pointsFree(c) > 0).map(c => c.name.short).join(', ')}`, kind: 'good', targets: ids(home.filter(c => c.tree && pointsFree(c) > 0)), tab: 'class' },
       !g.isNight && g.hoursToDusk <= 3 && { icon: '🌙', text: `Dusk in ${g.hoursToDusk}h — ~${g.waveForecast.size} spawn tonight`, kind: g.hoursToDusk <= 1 ? 'bad' : 'warn', drawer: 'party' },
@@ -1476,23 +1603,32 @@ export class UI {
       tired.length && { icon: '😴', text: `Exhausted: ${tired.length}`, kind: 'warn', targets: ids(tired) },
       idle.length > 1 && { icon: '🚶', text: `Idle colonists: ${idle.length}`, kind: 'warn', targets: ids(idle) },
       g.pendingArrivals.length && { icon: '🚪', text: `${g.pendingArrivals.length} waiting at the gate`, kind: 'warn', drawer: 'trade' },
-      g.caravan && { icon: '🐫', text: 'Caravan in town', kind: 'warn', drawer: 'trade' },
+      g.caravan && { icon: '🐫', text: 'Caravan in town — sell spare goods for gold', kind: 'decision', drawer: 'trade' },
       !g.research.current && { icon: '🔬', text: 'Need research project', kind: 'warn', drawer: 'research' },
-      over.length && { icon: '📦', text: `Storage full: ${over.map(k => RESOURCES[k].name).join(', ')}`, kind: 'bad', arch: 'logistics' },
+      over.length && { icon: '📦', text: `Storage full: ${over.map(k => `${RESOURCE_ICON[k] || ''} ${RESOURCES[k].name}`).join(', ')}`, kind: 'bad', arch: 'logistics' },
     ].filter(Boolean);
   }
 
   renderAlerts() {
-    const list = this.alerts();
-    const sig = list.map(a => a.text).join('|');
+    // Worst first, then the decisions that make gold, power or progress, then
+    // the rest. Three show; the others fold under "+N more" so a busy evening
+    // doesn't bury the one thing that matters under nine that don't.
+    const RANK = { tut: -1, critical: 0, decision: 1, bad: 2, good: 3, warn: 4 };
+    const all = this.alerts().map((a, i) => [a, i]).sort((x, y) => (RANK[x[0].kind] ?? 5) - (RANK[y[0].kind] ?? 5) || x[1] - y[1]).map(([a]) => a);
+    const cap = this.alertsOpen ? all.length : 3 + (all[0] && all[0].kind === 'tut' ? 1 : 0);
+    const list = all.slice(0, cap);
+    const more = all.length - list.length;
+    const sig = all.map(a => a.text).join('|') + '|' + cap;
     if (this.sigs.alerts === sig) return;
     this.sigs.alerts = sig;
     this.alertList = list;
     // Icon first, then the words, then a chevron that promises the click does
     // something; the stripe down the left edge is the severity.
-    $('#alerts').innerHTML = list.map((a, i) =>
+    $('#alerts').innerHTML = list.map((a, i) => a.kind === 'tut' ? this.tutorialCardHtml(a, i) :
       `<div class="al ${a.kind}" data-i="${i}" title="${a.targets ? 'Click to select them' : a.drawer ? 'Click to open' : a.arch ? 'Click to build' : ''}">
-        <span class="ai">${a.icon}</span><span class="at">${esc(a.text)}</span><span class="ag">›</span></div>`).join('');
+        <span class="ai">${a.icon}</span><span class="at">${esc(a.text)}</span><span class="ag">›</span></div>`).join('')
+      + (more > 0 ? `<div class="al more" data-more="1"><span class="at">+${more} more</span><span class="ag">▾</span></div>`
+        : this.alertsOpen && all.length > 3 ? '<div class="al more" data-more="1"><span class="at">Show fewer</span><span class="ag">▴</span></div>' : '');
   }
 
   paintToasts() {
@@ -1535,16 +1671,16 @@ export class UI {
     ['architect', 'Build', 'Buildings, floors and furniture (B)', '🔨', 'B'],
     ['people', 'People', 'Who does which job, and everyone at a glance (W)', '🧑‍🤝‍🧑', 'W'],
     ['colony', 'Colony', 'How the hold is doing: stocks, fields and animals, the workshop, the chronicle (C)', '🏕️', 'C'],
-    ['research', 'Research', 'The tech tree and the bestiary', '🔬', ''],
-    ['party', 'Rift', 'The delving party. Click the Rift Gate on the map to send them in', '🌀', ''],
-    ['region', 'World', 'The region map, and the caravans that come from it', '🗺️', ''],
+    ['research', 'Research', 'The tech tree and the bestiary (R)', '🔬', 'R'],
+    ['party', 'Rift', 'The Rift: its lair, the floors, and the next party (T)', '🌀', 'T'],
+    ['region', 'World', 'The region map, the market and caravans, and journeys (N)', '🗺️', 'N'],
   ];
   // Six main tabs; related panels are sub-tabs of one window rather than
   // separate tabs of their own. The first entry is the group's key and default.
   // Each sub-tab holds one kind of thing: the market only trades, the workshop
   // only makes, the tree only researches.
   static GROUPS = {
-    people: [['people', 'Duties'], ['roster', 'Roster']],
+    people: [['people', 'Duties'], ['roster', 'Roster'], ['classes', 'Classes']],
     colony: [['colony', 'Overview'], ['farm', 'Fields & Animals'], ['workshop', 'Workshop'], ['log', 'Chronicle']],
     research: [['research', 'Tech tree'], ['bestiary', 'Bestiary']],
     party: [['party', 'Party']],
@@ -1570,18 +1706,37 @@ export class UI {
       if (b.dataset.act === 'architect') { b.classList.toggle('on', archOpen); continue; }
       b.classList.toggle('on', !!this.drawer && UI.groupOf(this.drawer) === b.dataset.drawer);
       const k = b.dataset.drawer;
+      const urgent = this.railUrgent(k);
       const count = k === 'region' ? g.pendingArrivals.length + (g.caravan ? 1 : 0)
         : k === 'party' ? g.colonists.filter(c => c.mapId).length
           : k === 'research' ? (g.research.current ? 0 : 1)
-            : 0;
-      // Gold asks for a decision; blue is only news (a party is out).
+            : k === 'people' ? urgent
+              : 0;
+      // A ring says a decision is waiting in there; gold dots count them, blue is only news.
+      b.classList.toggle('urgent', urgent > 0 && UI.groupOf(this.drawer) !== k);
       let dot = b.querySelector('.dot');
       if (count > 0) {
         if (!dot) { dot = el('span', 'dot'); b.appendChild(dot); }
         dot.textContent = k === 'research' ? '!' : count > 9 ? '9+' : String(count);
-        dot.className = 'dot' + (k === 'party' ? ' info' : '');
+        dot.className = 'dot' + (k === 'party' && !urgent ? ' info' : '');
       } else if (dot) dot.remove();
     }
+  }
+
+  /** How many decisions wait behind a main tab — the ones that cost something to ignore. */
+  railUrgent(k) {
+    const g = this.game;
+    if (k === 'people') {
+      const home = g.colonists.filter(c => !c.dead && !c.away);
+      return home.filter(c => (c.tree && pointsFree(c) > 0) || (!c.tree && !c.training && this.classOptions(c).some(o => o.ready))).length;
+    }
+    if (k === 'region') return g.caravan ? 1 : 0;
+    if (k === 'research') return g.research.current ? 0 : 1;
+    if (k === 'party') {
+      const m = g.floorAt(g.floorCount);
+      return g.canEnterRift && !(m && m.lairCleared) && !g.colonists.some(c => c.mapId) && g.hour < 14 ? 1 : 0;
+    }
+    return 0;
   }
 
   toggleHelp() {
@@ -1590,7 +1745,10 @@ export class UI {
     h.innerHTML = this.helpHtml();
     this.show('#help');
     const close = () => this.hide('#help');
-    h.onclick = (e) => { if (e.target === h || e.target.dataset.close) close(); };
+    h.onclick = (e) => {
+      if (e.target.dataset && e.target.dataset.tutReplay) { restartTutorialState(this.game); this.sigs.alerts = null; close(); this.flash('Tutorial restarted — see the top of the alerts.', 'good'); return; }
+      if (e.target === h || e.target.dataset.close) close();
+    };
   }
 
   helpHtml() {
@@ -1598,7 +1756,7 @@ export class UI {
     const leg = (icon, what) => `<div class="lg"><span class="li">${icon}</span><span>${what}</span></div>`;
     return `<div class="mbox">
       <h2>Controls & legend</h2>
-      <div class="sub">Everything the colony answers to. Press <b>?</b> any time.</div>
+      <div class="sub">Everything the colony answers to. Press <b>?</b> any time. <button class="act" data-tut-replay="1">🧭 Replay the tutorial</button></div>
       <div class="hcols">
         <div>
           <div class="sect">Selecting</div>
@@ -1629,7 +1787,7 @@ export class UI {
           ${row('1 – 4', 'Speed')}
           ${row('space', 'Pause')}
           ${row('O', 'Cycle the soil and water overlays')}
-          ${row('W / C', 'People · Colony windows')}
+          ${row('W / C / R / T / N', 'People · Colony · Research · Rift · World windows')}
           ${row('Esc', 'Drop the tool and the selection')}
         </div>
         <div>
@@ -1706,7 +1864,7 @@ export class UI {
     const d = $('#drawer');
     if (!this.drawer) { d.classList.add('hidden'); return; }
     d.classList.remove('hidden');
-    d.classList.toggle('wide', ['people', 'roster', 'trade', 'services', 'party', 'farm', 'colony', 'log', 'workshop', 'bestiary'].includes(this.drawer));
+    d.classList.toggle('wide', ['people', 'roster', 'classes', 'trade', 'services', 'party', 'farm', 'colony', 'log', 'workshop', 'bestiary'].includes(this.drawer));
     d.classList.toggle('xwide', ['research', 'region'].includes(this.drawer));
     const body = $('#drawer .body');
     const t = $('#drawer .d-title');
@@ -1746,6 +1904,7 @@ export class UI {
     else if (this.drawer === 'workshop') this.drawWorkshopTab(body);
     else if (this.drawer === 'log') this.drawLog(body);
     else if (this.drawer === 'roster') this.drawRoster(body);
+    else if (this.drawer === 'classes') this.drawClasses(body);
     body.scrollTop = scroll;
   }
 
@@ -1757,6 +1916,10 @@ export class UI {
     }
     if (this.drawer === 'people') {
       return 'people|' + g.colonists.map(c => `${c.id}${Object.values(c.priorities).join('')}${Math.round(c.mood / 5)}${this.squad.has(c.id) ? 's' : ''}`).join('|') + '|' + g.graveyard.length;
+    }
+    if (this.drawer === 'classes') {
+      return 'classes|' + g.colonists.map(c => `${c.id}${c.klass}${c.level}${c.tree ? pointsFree(c) : ''}${c.training ? Math.floor(c.training.progress / c.training.need * 20) : ''}${c.away ? 'a' : ''}${c.drill || 0}${Object.values(c.attributes).join('')}`).join('|')
+        + `|${g.reagents.class_tome || 0}|${Object.keys(SCHOOLS).map(k => g.hasSchool(k) ? 1 : 0).join('')}|${g.unlocked.size}`;
     }
     if (this.drawer === 'region') {
       // The region map is ~400 sites; only rebuild when what it shows has changed.
@@ -1865,6 +2028,66 @@ export class UI {
   }
 
   /** Everyone at a glance: who they are, what they're doing, how they are. */
+  /**
+   * People › Classes: everyone's class at a glance, and one click to send a
+   * peasant to school. The single place the class loop lives, instead of four
+   * clicks deep in each colonist's card.
+   */
+  drawClasses(body) {
+    const g = this.game;
+    this.peopleCard(body);
+    const tomes = g.reagents.class_tome || 0;
+    const schools = Object.entries(SCHOOLS).map(([k, S]) => {
+      const has = g.hasSchool(k), open = g.unlocked.has(S.building);
+      const tech = unlockerOf(S.building);
+      return `<span class="kw kw-${has ? 'good' : 'neutral'}" data-tipt="${esc(has ? `${S.name} built — trains ${Object.keys(CLASS_INFO).filter(c => CLASS_INFO[c].school === k).map(c => CLASSES[c].name).join(', ')}.`
+        : open ? `Unlocked — build a ${S.name} (Build › Martial).` : `Research ${RESEARCH[tech] ? RESEARCH[tech].name : '?'} to unlock the ${S.name}.`)}"><i>${has ? '🏫' : open ? '🔨' : '🔒'}</i>${esc(S.name)}</span>`;
+    }).join('');
+    body.appendChild(el('div', 'cls-intro', `<div class="mini">Peasants work but fight poorly. A <b>class</b> gives them a skill tree, abilities and better gear. Classes are taught at schools, or learned in a day from a 📕 Class Tome.</div>
+      <div class="ct-row">${schools}${tomes ? `<span class="kw kw-good"><i>📕</i><b>${tomes}</b> Class Tome${tomes > 1 ? 's' : ''}</span>` : ''}</div>`));
+    const home = g.colonists.filter(c => !c.dead);
+    const peasants = home.filter(c => !c.tree), heroes = home.filter(c => c.tree);
+    const rowFor = (c) => {
+      let doing;
+      if (c.training) doing = `<span class="badge info">📖 becoming a ${esc(CLASSES[c.training.klass].name)} · ${Math.round(c.training.progress / c.training.need * 100)}%</span>`;
+      else if (c.tree) {
+        const pts = pointsFree(c);
+        doing = `${pts ? `<button class="act primary" data-cls-open="${c.id}">★ ${pts} point${pts > 1 ? 's' : ''} to spend</button>` : '<span class="mini">Skill tree up to date</span>'}`;
+      } else {
+        const ready = this.classOptions(c).filter(o => o.ready);
+        if (ready.length) doing = ready.slice(0, 6).map(o => `<button class="ct-tac ready" data-cls-enroll="${c.id}:${o.k}" data-tipt="${esc(o.how)}">${esc(CLASSES[o.k].name)}${o.via === 'tome' ? ' 📕' : ''}</button>`).join('');
+        else {
+          const dt = drillTarget(c);
+          const anyWay = Object.keys(SCHOOLS).some(k => g.hasSchool(k)) || tomes;
+          doing = `<span class="mini">${dt ? `${dt.attr.toUpperCase()} ${dt.value}/12 for ${esc(CLASSES[dt.klass].name)} — ${g.world.findBuildings('training').length ? 'drilling at the Training Dummy raises it' : 'a Training Dummy would raise it'}.` : ''}${!anyWay ? ' No school or tome yet.' : ''}</span>`;
+        }
+      }
+      return `<div class="rrow cls-row" data-cls-pick="${c.id}">
+        <span class="rpt">${RACE_ICON[c.race] || '🧑'}</span>
+        <div class="rwho"><b>${esc(c.name.short)}</b><span>${esc(c.title || CLASSES[c.klass].name)} · lv ${c.level}${c.away ? ' · in the Rift' : ''}</span></div>
+        <div class="cls-do">${doing}</div></div>`;
+    };
+    body.appendChild(el('div', '', sectHtml('Peasants', `${peasants.length}`)));
+    body.appendChild(el('div', 'roster', peasants.map(rowFor).join('') || '<div class="mini">Everyone has a class.</div>'));
+    body.appendChild(el('div', '', sectHtml('Heroes', `${heroes.length}`)));
+    body.appendChild(el('div', 'roster', heroes.map(rowFor).join('')));
+    body.onclick = (e) => {
+      const en = e.target.closest && e.target.closest('[data-cls-enroll]');
+      const op = e.target.closest && e.target.closest('[data-cls-open]');
+      const pick = e.target.closest && e.target.closest('[data-cls-pick]');
+      if (en) {
+        const [id, k] = en.dataset.clsEnroll.split(':');
+        const r = g.hasSchool(CLASS_INFO[k].school) ? g.enroll(+id, k) : g.readTome(+id, k);
+        if (r) this.toast(r, 'warn'); else this.flash(`Training begins: ${CLASSES[k].name}.`, 'good');
+      } else if (op || pick) {
+        const id = +(op ? op.dataset.clsOpen : pick.dataset.clsPick);
+        this.squad.clear(); this.squad.add(id); this.commitSquad();
+        this.tab = 'class'; this.sigs.insp = null; this.renderInspector();
+      } else return;
+      this.sigs.drawer = null; this.renderDrawer();
+    };
+  }
+
   drawRoster(body) {
     const g = this.game;
     const cs = [...g.colonists].sort((a, b) => (a.away - b.away) || a.name.short.localeCompare(b.name.short));
@@ -2105,7 +2328,7 @@ export class UI {
         { label: 'Settlements', value: kindCount(K => K.settle && K !== SITE_KINDS.colony) },
         { label: 'Hostile', value: kindCount(K => K.hostileSite), color: 'var(--bad)' },
         { label: 'Resources', value: kindCount(K => K.node) },
-        { label: 'Landmarks', value: kindCount(K => K.landmark) },
+        { label: 'Worth a trip', value: known.filter(st => siteErrand(st)).length, color: 'var(--hi)', tip: 'Sites marked ! — resources to gather, ruins to search, camps to clear' },
       ],
     }));
     const frame = el('div', 'wd-map');
@@ -2133,6 +2356,7 @@ export class UI {
       ['🏘️', 'Settlements', (K) => K.settle && K !== SITE_KINDS.colony],
       ['⚔️', 'Hostile', (K) => K.hostileSite],
       ['🪨', 'Resources', (K) => K.node],
+      ['🏚️', 'Ruins & shrines', (K) => K.delve || K.shrine],
       ['🏰', 'Landmarks', (K) => K.landmark],
     ];
     const cols = el('div', 'wd-groups');
@@ -2145,7 +2369,8 @@ export class UI {
         const h = st.hostility != null ? dispositionOf(st.hostility) : null;
         const chip = el('div', 'wd-site' + (this.selSite === st ? ' on' : '') + (st.cleared ? ' cleared' : ''));
         chip.dataset.tip = 'site:' + st.id;
-        chip.innerHTML = `<span class="wd-si">${SITE_ICON[st.kind] || '📍'}</span><span class="wd-sn">${esc(st.name)}</span>
+        const rw = siteErrand(st);
+        chip.innerHTML = `<span class="wd-si">${SITE_ICON[st.kind] || '📍'}</span><span class="wd-sn">${esc(st.name)}${rw ? ' <b class="wd-rw" title="Something to go and get: ' + ERRANDS[rw].name + '">!</b>' : ''}</span>
           ${h ? `<i style="background:${h.color}"></i>` : ''}<span class="wd-sd">${Math.round(st.dist)}</span>`;
         chip.onclick = () => { this.selSite = st; this.sel = { kind: 'site', ref: st }; this.sigs.insp = null; this.renderInspector(); this.renderDrawer(); };
         col.appendChild(chip);
@@ -2153,7 +2378,7 @@ export class UI {
       cols.appendChild(col);
     }
     body.appendChild(cols);
-    body.appendChild(el('div', 'hint', 'Traders and wanderers come from these places. Cartography sends scouts out at every dawn. The dot beside a place is how it feels about you.'));
+    body.appendChild(el('div', 'hint', 'Places marked <b class="wd-rw">!</b> have something to go and get: resources to gather, ruins to search, camps to clear. Click one, select who goes on the colonist bar, and send them from its card. Cartography charts more at every dawn.'));
   }
 
   /**
@@ -2264,6 +2489,7 @@ export class UI {
     // Read top to bottom as the questions come: what state is the gate in, is
     // anyone inside, who goes next, what waits for them, what comes out tonight.
     this.drawRiftHero(body);
+    this.drawLairGoal(body);
     this.drawRiftParties(body);
     this.drawPartyLayout(body);
     this.drawRiftStatus(body);
@@ -2375,6 +2601,29 @@ export class UI {
   }
 
   /** The gate's state in one strip: open or quiet, level, rank. */
+  /**
+   * The Rift's finish line, said plainly: where the lair is today, what
+   * breaking it pays, and how long before it moves a floor deeper.
+   */
+  drawLairGoal(body) {
+    const g = this.game;
+    const depth = g.floorCount, m = g.floorAt(depth);
+    const B = BIOMES_RIFT[g.rift.biome ? g.rift.biome.id : 'goblin_warrens'] || {};
+    const nextIn = g.riftNextLevelIn;
+    const broken = m && m.lairCleared;
+    const loot = Object.entries(B.loot || {}).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => kw('res', k)).join('');
+    const firstTome = !(g.stats.lairs > 0);
+    const carried = {};
+    for (const c of g.colonists) if (!c.dead && c.mapId && c.pack) for (const [k, q] of Object.entries(c.pack)) if (q > 0) carried[k] = (carried[k] || 0) + q;
+    const carriedHtml = Object.keys(carried).length ? Object.entries(carried).map(([k, q]) => kw('res', k, { qty: Math.round(q), short: true })).join('') : '<span class="mini">nothing yet</span>';
+    body.appendChild(el('div', 'goal-card' + (broken ? ' done' : ''), `
+      <div class="goal-h"><span class="goal-ic">${broken ? '🏆' : '🎯'}</span>
+        <div><div class="goal-t">${broken ? `The lair on floor ${depth} is broken` : `Goal: break the lair on floor ${depth}`}</div>
+        <div class="mini">${broken ? 'Come back when the Rift deepens for the next one.' : `The lair boss waits at the bottom of the Rift. ${nextIn > 0 ? `In <b>${nextIn} day${nextIn === 1 ? '' : 's'}</b> the Rift deepens and the lair moves to floor ${depth + 1}.` : ''}`}</div></div></div>
+      <div class="goal-rw"><span class="mini">Reward</span>${loot}<span class="kw kw-good"><i>⚔️</i>2 pieces of gear</span><span class="kw kw-good"><i>💠</i>${4 + depth} Rift shards</span><span class="kw kw-good"><i>🌙</i>2 nights with no wave</span>${firstTome ? '<span class="kw kw-good"><i>📕</i>a Class Tome (first lair)</span>' : ''}</div>
+      <div class="goal-rw"><span class="mini" data-tipt="Loot is what your delvers carry in their packs. It only counts once they walk it back up and out of the Rift.">Loot in packs below</span>${carriedHtml}</div>`));
+  }
+
   drawRiftHero(body) {
     const g = this.game;
     const R = g.rift;
@@ -2592,7 +2841,7 @@ export class UI {
       const unlocks = (T.unlock || []).map(u => BUILDING_ICON[u] || '').join('');
       return `<div class="tn tn-${st}" data-tech="${t}" data-tip="tech:${t}" style="left:${pos[t].x}px;top:${pos[t].y}px;width:${W}px;height:${H}px">
         <div class="tn-ic">${TECH_ICON[t] || '🔬'}</div>
-        <div class="tn-bd"><div class="tn-nm">${T.name}</div>
+        <div class="tn-bd"><div class="tn-nm">${T.name}${techOutcome(t) ? `<em class="tn-out">${techOutcome(t)}</em>` : ''}</div>
           <div class="tn-mt"><span>${T.cost}</span><span class="tn-un">${unlocks}${T.bonus ? '⭐' : ''}</span></div>
           <div class="tn-pb"><i style="width:${Math.round(f * 100)}%"></i></div></div>
         ${badge ? `<div class="tn-bg">${badge}</div>` : ''}</div>`;
@@ -2651,7 +2900,7 @@ export class UI {
         c.innerHTML = `<div class="tr-vp">${RACE_ICON[n.race] || '🧑'}</div>
           <div class="tr-vb"><b>${esc(n.name.full)}</b>
             <div class="mini">${RACES[n.race].name} ${CLASSES[n.klass].name} · L${n.level} · ⚔️ ${powerOf(n)}</div>
-            <div class="tr-traits">${n.traits.slice(0, 3).map(t => `<span class="tag" data-tip="trait:${t}">${TRAITS[t].name}</span>`).join('')}</div>
+            <div class="tr-traits">${kwList('trait', n.traits.slice(0, 3))}</div>
             ${gauge({ label: 'Disposition', frac: n.hostility / 100, verdict: disp.name, color: disp.color, note: n.hostility > 72 ? 'Might turn on the hold.' : '' })}
             <div class="mini">🕓 waits ${Math.max(0, Math.round((a.expires - g.tick) / 60))}h more${a.fee ? ` · asks 🪙 ${a.fee}` : ' · asks nothing'}</div></div>`;
         const acts = el('div', 'tr-va');
@@ -2747,7 +2996,7 @@ export class UI {
     const potionTile = (id, n, price, act) => `<div class="tr-item${gold >= price ? '' : ' no'}" ${act} data-tip="potion:${id}">
         <div class="tr-ic">${POTIONS[id].icon}</div><div class="tr-n">${esc(POTIONS[id].name)}</div><div class="tr-q">${n} on the shelf</div><div class="tr-p">🪙 ${price}</div></div>`;
     const beastTile = (b, act) => { const A = ANIMALS[b.species], price = beastPrice(b); return `<div class="tr-item beast${gold >= price ? '' : ' no'}" ${act} data-tip="species:${b.species}">
-        <div class="tr-ic">${ANIMAL_ICON[b.species] || '🐾'}</div><div class="tr-n">${A.name}</div><div class="tr-q">${b.traits.length ? b.traits.map(t => BEAST_TRAITS[t].name).join(', ') : (b.sex === 'f' ? 'female' : 'male')}</div><div class="tr-p">🪙 ${price}</div></div>`; };
+        <div class="tr-ic">${ANIMAL_ICON[b.species] || '🐾'}</div><div class="tr-n">${A.name}</div><div class="tr-q">${b.traits.length ? kwList('btrait', b.traits) : (b.sex === 'f' ? 'female' : 'male')}</div><div class="tr-p">🪙 ${price}</div></div>`; };
     const mercTile = (n, act) => { const fee = mercFee(n); return `<div class="tr-item merc${gold >= fee ? '' : ' no'}" ${act} data-tipt="${esc(n.name.full)} · ${esc(RACES[n.race].name)} ${esc(CLASSES[n.klass].name)}">
         <div class="tr-ic">${RACE_ICON[n.race] || '🧑'}</div><div class="tr-n">${esc(n.name.short)}</div><div class="tr-q">${CLASSES[n.klass].name} L${n.level} · ⚔️ ${powerOf(n)}</div><div class="tr-p">🪙 ${fee} + ${mercWage(n)}/day</div></div>`; };
 
@@ -2804,7 +3053,7 @@ export class UI {
       const spare = g.armory.map((it, i) => [it, i]).sort((a, b) => itemBuyback(b[0]) - itemBuyback(a[0])).slice(0, 8);
       if (spare.length) {
         const sg = grid();
-        sg.innerHTML = spare.map(([it, i]) => `<div class="tr-item sell" data-sell="${i}" data-tip="${itemTipKey(it)}"><div class="tr-ic">${SLOT_ICONS[it.slot] || '⚔️'}</div><div class="tr-n" style="color:${RARITIES[it.rarity].color}">${esc(it.name)}</div><div class="tr-q">from your armory</div><div class="tr-p">+🪙 ${itemBuyback(it)}</div></div>`).join('');
+        sg.innerHTML = spare.map(([it, i]) => `<div class="tr-item sell" data-sell="${i}" data-tip="${itemTipKey(it)}"><div class="tr-ic">${SLOT_ICONS[it.slot] || '⚔️'}</div><div class="tr-n" style="color:${RARITIES[it.rarity].color}">${esc(it.name)}</div><div class="tr-q">from your stash</div><div class="tr-p">+🪙 ${itemBuyback(it)}</div></div>`).join('');
         wrap.appendChild(el('div', 'mini shop-desc', 'Sell what the hold doesn’t use:'));
         wrap.appendChild(sg);
       }
@@ -2948,6 +3197,16 @@ export class UI {
       wrap.appendChild(tr);
     }
 
+    // Packs: leather into loot. The bigger a delver's pack, the more comes out of the Rift per trip.
+    wrap.appendChild(sect('🎒 Bigger packs', 'leather and cloth → more loot carried per delve'));
+    const pk = el('div', 'shop-row');
+    pk.innerHTML = g.colonists.filter(c => !c.dead && c.tree).sort((a, b) => b.level - a.level).slice(0, 10).map(c => {
+      const lv = Math.round((c.packUpgrade || 0) / PACK_STEP), cost = packUpgradeCost(c);
+      const can = lv < PACK_MAX && Object.entries(cost).every(([k, v]) => (g.resources[k] || 0) >= v);
+      return `<button class="act" data-pack="${c.id}"${can ? '' : ' disabled'} data-tipt="${esc(`${c.name.short}'s pack holds ${packCap(c)}. ${lv >= PACK_MAX ? 'As big as it gets.' : `+${PACK_STEP} for ${cost.leather} leather and ${cost.cloth} cloth.`}`)}">🎒 ${esc(c.name.short)} ${'●'.repeat(lv)}${'○'.repeat(PACK_MAX - lv)}${lv < PACK_MAX ? ` · ${cost.leather}${RESOURCE_ICON.leather}` : ''}</button>`;
+    }).join('') || '<span class="mini">Heroes carry packs; peasants don\'t delve.</span>';
+    wrap.appendChild(pk);
+
     // Journeys
     const ow = g.overworld;
     const sites = ow ? ow.sites.filter(s => s.discovered && SITE_KINDS[s.kind].trade) : [];
@@ -3000,6 +3259,7 @@ export class UI {
       else if (d.bless) r = bless(g, d.bless);
       else if (d.raise) r = raiseDead(g, +d.raise);
       else if (d.train) r = paidTraining(g, +d.train);
+      else if (d.pack) r = upgradePack(g, +d.pack);
       else if (d.journey) {
         const [sid, errand] = d.journey.split(':');
         const ids = (d.ids || '').split(',').filter(Boolean).map(Number);
@@ -3038,7 +3298,7 @@ export class UI {
       stats: [
         { label: 'Gear kits', value: Math.floor(g.resources.gear || 0), tip: 'Two forge a piece; one reinforces' },
         { label: 'Potions', value: potions },
-        { label: 'Armory', value: g.armory.length },
+        { label: 'Stash', value: g.armory.length, tip: 'Spare weapons and armour: Rift loot, forged pieces and gear taken off colonists' },
         { label: 'Reagents', value: reagents },
       ],
     }));
@@ -3052,7 +3312,7 @@ export class UI {
       ...reag.map(([k, v]) => ESSENCES[k] ? `<span class="ct-chip" data-tipt="${ESSENCES[k].name}\nDropped by monsters of its element. Used for enchanting, spellcraft and ward potions.">${ESSENCES[k].icon} ${ESSENCES[k].name} <b>×${v}</b></span>` : `<span class="ct-chip">📕 ${k === 'class_tome' ? 'Class Tome' : esc(k)} <b>×${v}</b></span>`),
       ...tro.map(([k, v]) => `<span class="ct-chip good" data-tipt="${TROPHIES[k].name}\nA trophy from a named monster. Used in legendary crafting.">${TROPHIES[k].icon} ${TROPHIES[k].name} <b>×${v}</b></span>`),
     ].join('')));
-    body.appendChild(el('div', '', sectHtml('Armory', `${g.armory.length} piece${g.armory.length === 1 ? '' : 's'}`)));
+    body.appendChild(el('div', '', sectHtml('🎒 Stash', `${g.armory.length} piece${g.armory.length === 1 ? '' : 's'}`)));
     if (!g.armory.length) body.appendChild(el('div', 'mini', 'Empty. Loot comes back from delves and beaten raids.'));
     else {
       const ag = el('div', 'tr-arm');
@@ -3176,7 +3436,10 @@ export class UI {
 
   setTabs(names) {
     const t = $('#inspector .tabs');
-    const label = { overview: 'Overview', skills: 'Skills', gear: 'Gear', class: 'Class' };
+    const label = { overview: 'Overview', skills: 'Skills', gear: 'Gear', class: '🎓 Class' };
+    // The Class tab lights up when there's a choice waiting in it.
+    const sc = this.sel && this.sel.kind === 'colonist' && this.game.colonists.find(x => x.id === this.sel.id);
+    if (sc && names.includes('class') && ((sc.tree && pointsFree(sc) > 0) || (!sc.training && !sc.tree && this.classOptions(sc).some(o => o.ready)))) label.class = '🎓 Class <i class="tab-dot"></i>';
     t.innerHTML = names.map(n => `<button data-tab="${n}" class="${this.tab === n ? 'on' : ''}">${label[n] || n}</button>`).join('');
     t.style.display = names.length ? '' : 'none';
     t.onclick = (e) => { const b = e.target.closest('button'); if (!b) return; this.tab = b.dataset.tab; this.renderInspector(); };
@@ -3190,16 +3453,43 @@ export class UI {
       return `<div class="sect">Training</div><div class="mini">Becoming a <b>${esc(CLASSES[t.klass].name)}</b> — ${pct}%${t.tome ? ' (reading a Class Tome)' : t.teacher ? ' (with an instructor: double pace)' : ' (self-study: find an instructor of level 5+)'}.</div>
         <div class="ct-row"><button class="ct-tac" data-cancel="1">Stop training</button></div>`;
     }
+    const opts = this.classOptions(c);
     const tomes = g.reagents.class_tome || 0;
-    const rows = Object.keys(CLASS_INFO).map(k => {
-      const why = classRequirement(c, k);
-      const school = CLASS_INFO[k].school;
-      const hasSchool = g.hasSchool(school);
-      if (!hasSchool && !tomes) return '';
-      return `<button class="ct-tac" data-enroll="${k}" ${why ? `disabled data-tipt="${esc(why)}"` : `data-tipt="${hasSchool ? 'Train at the ' + SCHOOLS[school].name + ' (' + SCHOOLS[school].days + ' days, halved with an instructor)' : 'Read a Class Tome (1 day)'}"`}>${esc(CLASSES[k].name)}${hasSchool ? '' : ' 📕'}</button>`;
-    }).filter(Boolean);
-    if (!rows.length) return `<div class="sect">Change class</div><div class="mini">Build a Combat School, Mage School or Temple — or find a Class Tome in the Rift — to train a new class.</div>`;
-    return `<div class="sect">Change class${c.tree ? ' <span class="mini">— keeps level, refunds points, a mood hit</span>' : ''}</div><div class="ct-row">${rows.join('')}</div>`;
+    // Every class shows, grouped by where it's taught — a locked one says how
+    // to open it, so the way to a Fighter is never a mystery.
+    const bySchool = {};
+    for (const o of opts) (bySchool[o.school] || (bySchool[o.school] = [])).push(o);
+    const groups = Object.entries(bySchool).map(([school, list]) => {
+      const S = SCHOOLS[school];
+      const head = g.hasSchool(school) ? `🏫 ${esc(S.name)}` : tomes ? `📕 Class Tome (no ${esc(S.name)} yet)` : `🔒 ${esc(S.name)}`;
+      return `<div class="ct-row"><span class="mini">${head}</span>${list.map(o =>
+        `<button class="ct-tac${o.ready ? ' ready' : ''}" data-enroll="${o.k}" ${o.why ? `disabled data-tipt="${esc(o.why)}"` : `data-tipt="${esc(o.how)}"`}>${esc(CLASSES[o.k].name)}${o.via === 'tome' ? ' 📕' : ''}</button>`).join('')}</div>`;
+    });
+    const readyN = opts.filter(o => o.ready).length;
+    const tomeLine = tomes ? `<div class="mini">📕 ${tomes} Class Tome${tomes > 1 ? 's' : ''} in the stash — any class, one day's reading, no school needed.</div>` : '';
+    return `<div class="sect">${c.tree ? 'Change class' : 'Become a hero'}${readyN ? ` <em>${readyN} open</em>` : ''}</div>${tomeLine}${groups.join('')}
+      ${c.tree ? '<div class="mini">Changing keeps level and refunds skill points, at a mood cost.</div>' : ''}`;
+  }
+  /**
+   * Every class this colonist could take, and how: at a school, from a tome,
+   * or why not yet (attribute too low, no school, no tome). Shared by the
+   * colonist's Class tab and the People › Classes list.
+   */
+  classOptions(c) {
+    const g = this.game;
+    const tomes = g.reagents.class_tome || 0;
+    return Object.keys(CLASS_INFO).filter(k => k !== c.klass).map(k => {
+      const school = CLASS_INFO[k].school, S = SCHOOLS[school];
+      const req = classRequirement(c, k);
+      const has = g.hasSchool(school);
+      const via = has ? 'school' : tomes ? 'tome' : null;
+      const unlockTech = unlockerOf(S.building);
+      const noWay = !via ? (g.unlocked.has(S.building) ? `Build a ${S.name} to train this class, or find a Class Tome in the Rift.`
+        : `Research ${RESEARCH[unlockTech] ? RESEARCH[unlockTech].name : 'more'}, then build a ${S.name} — or find a Class Tome in the Rift.`) : '';
+      const why = req || noWay;
+      const how = via === 'school' ? `Train at the ${S.name}: ${S.days} days, halved with an instructor of level 5+.` : 'Read a Class Tome: one day, no school needed.';
+      return { k, school, via, why, how, ready: !why };
+    });
   }
   classChangeClick(e, c) {
     const en = e.target.closest('[data-enroll]'), cn = e.target.closest('[data-cancel]');
@@ -3300,7 +3590,7 @@ export class UI {
     if (smithy) {
       const who = this.forgeFor != null ? g.colonists.find(c => c.id === this.forgeFor) : null;
       const pick = el('div', 'ws-row');
-      pick.innerHTML = `<label class="mini">For <select data-forgefor><option value="">the armory</option>${g.colonists.filter(c => !c.dead).map(c => `<option value="${c.id}"${who && who.id === c.id ? ' selected' : ''}>${esc(c.name.short)} · ${esc(c.title || CLASSES[c.klass].name)}</option>`).join('')}</select></label>`;
+      pick.innerHTML = `<label class="mini">For <select data-forgefor><option value="">the stash</option>${g.colonists.filter(c => !c.dead).map(c => `<option value="${c.id}"${who && who.id === c.id ? ' selected' : ''}>${esc(c.name.short)} · ${esc(c.title || CLASSES[c.klass].name)}</option>`).join('')}</select></label>`;
       body.appendChild(pick);
       const tbl = el('div', 'forge-grid');
       tbl.innerHTML = `<span></span>${FORGE_SLOTS.map(sl => `<span class="fg-h">${SLOT_ICONS[sl]} ${SLOT_NAMES[sl]}</span>`).join('')}`
@@ -3382,7 +3672,7 @@ export class UI {
       <div class="gs-abil">${[...c.abilities, ...(c.combat.gearAbilities || [])].map((a, i) => `<div data-tip="ability:${a}"><span>${i >= c.abilities.length ? '💍' : ABILITIES[a].dmg && DAMAGE_TYPES[ABILITIES[a].dmg] ? DAMAGE_TYPES[ABILITIES[a].dmg].icon : '✨'}</span>${esc(ABILITIES[a].name)}</div>`).join('')}</div>
       <div class="sect">Potion belt <span class="mini">— packed from the stash when a delve leaves</span></div>
       <div class="gs-belt">${Array.from({ length: size }, (_, i) => `<select data-belt="${i}">${options(belt[i])}</select>`).join('')}</div>
-      <div class="sect">Armory (${g.armory.length})</div><div id="armory"></div>`;
+      <div class="sect">Stash (${g.armory.length})</div><div id="armory"></div>`;
     b.querySelectorAll('[data-belt]').forEach(sel => sel.onchange = () => {
       const nb = [...(c.belt || [])];
       nb[+sel.dataset.belt] = sel.value || undefined;
@@ -3421,8 +3711,10 @@ export class UI {
   drawClassTab(b, c) {
     const info = CLASS_INFO[c.klass];
     if (!c.tree) {
-      b.innerHTML = `<div class="mini">${esc(CLASSES[c.klass].name)}s have no skill tree. Train them into a class at a school, or hand them a Class Tome.</div>
-        <div class="sect">Abilities</div><div class="gs-abil">${c.abilities.map(a => `<div data-tip="ability:${a}"><span>✨</span>${esc(ABILITIES[a].name)}</div>`).join('')}</div>` + this.classChangeHtml(c);
+      // A peasant's Class tab is about one thing: which hero they could become.
+      b.innerHTML = `<div class="mini">${esc(c.title || CLASSES[c.klass].name)}s have no skill tree and don't fight well. A class gives them one: skills, abilities and better gear.</div>`
+        + this.classChangeHtml(c)
+        + this.fold('peasant-abil', 'Current abilities', `<div class="gs-abil">${c.abilities.map(a => `<div data-tip="ability:${a}"><span>✨</span>${esc(ABILITIES[a].name)}</div>`).join('')}</div>`);
       b.onclick = (e) => this.classChangeClick(e, c);
       return;
     }
@@ -3526,7 +3818,7 @@ export class UI {
     const alias = { bio: 'overview', social: 'overview', health: 'overview' };
     if (alias[this.tab]) this.tab = alias[this.tab];
     if (!['overview', 'skills', 'gear', 'class'].includes(this.tab)) this.tab = 'overview';
-    this.setTabs(['overview', 'skills', 'gear']);
+    this.setTabs(['overview', 'class', 'skills', 'gear']);
     const b = $('#inspector .insp-body');
     b.innerHTML = '';
     if (this.tab === 'overview') {
@@ -3535,38 +3827,45 @@ export class UI {
         .map(([id, r]) => [g.colonists.find(x => x.id === +id), r])
         .filter(([o]) => o).sort((x, y) => Math.abs(y[1].value) - Math.abs(x[1].value)).slice(0, 4);
       const thoughts = c.thoughts.slice(-4).reverse();
+      // Mood leads: it drives work speed, breaks and loyalty. Its two biggest
+      // reasons sit right under it; the full list folds away.
+      const why = c.away ? [] : moodBreakdown(g, c).sort((x, y) => Math.abs(y.v) - Math.abs(x.v));
+      const fmt = (r) => `<span class="${r.v > 0 ? 'kw-good-ink' : 'kw-bad-ink'}">${esc(r.label)} ${r.v > 0 ? '+' : ''}${Math.round(r.v)}</span>`;
+      const low = needs.filter(([n]) => c.needs[n] < 0.5);
       b.innerHTML = `
-        <div class="sect">Needs</div>
-        ${needs.map(([n, lb]) => kbar(lb, c.needs[n] * 100, 100, levelStatus(c.needs[n]),
-          c.needs[n] < 0.25 ? 'critical' : Math.round(c.needs[n] * 100) + '%')).join('')}
+        <div class="mood-why">${why.length ? why.slice(0, 2).map(fmt).join(' · ') : '<span class="mini">Nothing much on their mind.</span>'}</div>
+        ${low.length ? `<div class="sect">Needs</div>${low.map(([n, lb]) => kbar(lb, c.needs[n] * 100, 100, levelStatus(c.needs[n]),
+          c.needs[n] < 0.25 ? 'critical' : Math.round(c.needs[n] * 100) + '%')).join('')}` : ''}
         ${c.injuries.length ? `<div class="sect">Injuries</div>${c.injuries.map(i => `<div class="row"><span class="k">${esc(i.name)}</span>
           <span class="v" style="color:${i.heal < 0 ? 'var(--danger)' : i.treated ? 'var(--good)' : 'var(--warn)'}">${i.heal < 0 ? 'permanent' : i.treated ? 'treated' : 'untreated'}</span></div>`).join('')}` : ''}
         <div class="sect">Traits</div>
-        <div>${c.traits.map(t => `<span class="tag" data-tip="trait:${t}">${TRAITS[t].name}</span>`).join('') || '<span class="mini">None of note.</span>'}</div>
-        ${thoughts.length ? `<div class="sect">On their mind</div>${thoughts.map(t => { const T = THOUGHTS[t.id]; return `<div class="row thought" data-tip="thought:${t.id}"><span class="k">${T.name}</span><span class="v" style="color:${T.v > 0 ? 'var(--good)' : 'var(--bad)'}">${T.v > 0 ? '+' : ''}${T.v}</span></div>`; }).join('')}` : ''}
-        ${rels.length ? `<div class="sect">Closest bonds</div>${rels.map(([o, r]) => `<div class="row"><span class="k">${esc(o.name.short)}${c.partner === o.id ? ' ♥' : ''}</span>
+        <div>${kwList('trait', c.traits, '<span class="mini">None of note.</span>')}</div>
+        ${this.fold('col-mind', `On their mind (${why.length})`, why.map(r => `<div class="row thought"${THOUGHTS[r.id] ? ` data-tip="thought:${r.id}"` : ''}><span class="k">${esc(r.label)}</span><span class="v ${r.v > 0 ? 'kw-good-ink' : 'kw-bad-ink'}">${r.v > 0 ? '+' : ''}${Math.round(r.v)}</span></div>`).join('') || '<div class="mini">Nothing.</div>')}
+        ${this.fold('col-more', 'Needs, bonds and background', `${needs.map(([n, lb]) => kbar(lb, c.needs[n] * 100, 100, levelStatus(c.needs[n]), Math.round(c.needs[n] * 100) + '%')).join('')}
+          ${rels.length ? `<div class="sect">Closest bonds</div>${rels.map(([o, r]) => `<div class="row"><span class="k">${esc(o.name.short)}${c.partner === o.id ? ' ♥' : ''}</span>
           <span class="v" style="color:${r.value > 40 ? 'var(--good)' : r.value < -30 ? 'var(--bad)' : 'var(--dim)'}">${relKind(r.value).name}</span></div>`).join('')}` : ''}
-        <div class="mini" style="margin-top:8px">${esc(c.background)} · from ${esc(c.faction)}</div>`;
+          <div class="mini" style="margin-top:8px">${esc(c.background)} · from ${esc(c.faction)}</div>`)}`;
     } else if (this.tab === 'skills') {
       b.innerHTML = `<button class="act wide${pts ? ' primary' : ''}" id="openclass">${CLASSES[c.klass].name} tree${pts ? ` — ${pts} point${pts > 1 ? 's' : ''} to spend` : ''} ›</button>
         <div class="sect">Skills</div>`
-        + SKILL_IDS.slice().sort((x, y) => c.skills[y] - c.skills[x]).map(s => {
-          const lv = c.skills[s], p = c.passions[s];
-          return `<div class="skill" data-tip="skill:${c.id}|${s}"><span class="nm">${SKILLS[s].name}</span><span class="lv">${lv}</span>
+        + (() => {
+          // The five best, then the rest folded; untouched skills with no passion aren't worth a row.
+          const row = (s) => {
+            const lv = c.skills[s], p = c.passions[s];
+            return `<div class="skill" data-tip="skill:${c.id}|${s}"><span class="nm">${SKILLS[s].name}</span><span class="lv">${lv}</span>
             <span class="tr"><i style="width:${lv / 20 * 100}%;background:${seqStep(lv / 20)}"></i></span>
             <span class="ps">${p === 'burning' ? '★' : p === 'minor' ? '✦' : ''}</span></div>`;
-        }).join('')
+          };
+          const all = SKILL_IDS.slice().sort((x, y) => c.skills[y] - c.skills[x]).filter(s => c.skills[s] > 0 || c.passions[s]);
+          return all.slice(0, 5).map(row).join('') + (all.length > 5 ? this.fold('col-skills', `${all.length - 5} more skills`, all.slice(5).map(row).join('')) : '');
+        })()
         + `<div class="hint">★ burning passion · ✦ some interest. Set who does what in People › Duties.</div>
-        <div class="sect">Attributes</div>
-        <div class="attrs">${ATTRS.map(a => `<div><span>${a.toUpperCase()}</span><b>${c.attributes[a]}</b></div>`).join('')}</div>`;
+        ${this.fold('col-attrs', 'Attributes', `<div class="attrs">${ATTRS.map(a => `<div><span>${a.toUpperCase()}</span><b>${c.attributes[a]}</b></div>`).join('')}</div>`)}`;
       const ob = b.querySelector('#openclass');
       if (ob) ob.onclick = () => { this.tab = 'class'; this.renderInspector(); };
     } else if (this.tab === 'gear') {
       this.drawGearTab(b, c);
     } else if (this.tab === 'class') {
-      const back = el('button', 'act', '‹ Skills');
-      back.onclick = () => { this.tab = 'skills'; this.renderInspector(); };
-      b.appendChild(back);
       this.drawClassTab(b, c);
     }
   }
@@ -3577,24 +3876,25 @@ export class UI {
     const f = w.feature[i], bd = w.building[i], fl = w.floor[i];
     const icon = bd ? (BUILDING_ICON[bd.id] || '🧱') : (f ? (FEATURE_ICON[f] || '·') : (terr.mineable ? '🪨' : '·'));
     $('#inspector .insp-title').innerHTML = `${icon} ${esc(bd ? BUILDINGS[bd.id].name : (f ? FEATURES[f].name : terr.name))}`;
-    $('#inspector .insp-sub').textContent = `tile ${x},${y}`;
+    $('#inspector .insp-sub').textContent = bd ? (bd.done ? BUILDINGS[bd.id].cat : 'blueprint') : (f ? terr.name : '');
     this.setTabs([]);
     const b = $('#inspector .insp-body');
-    b.innerHTML = `<div class="row"><span class="k">Terrain</span><span class="v">${terr.name}</span></div>
-      ${f ? `<div class="row"><span class="k">Feature</span><span class="v">${FEATURE_ICON[f] || ''} ${FEATURES[f].name}</span></div>
-        <div class="mini">yields ${Object.entries(FEATURES[f].yield).map(([k, v]) => `${RESOURCE_ICON[k] || ''} ${v} ${RESOURCES[k].name}`).join(', ')}</div>` : ''}
+    // Lead with what the tile is for; the survey numbers fold away below.
+    b.innerHTML = `
+      ${f ? `<div class="mini">Yields ${Object.entries(FEATURES[f].yield).map(([k, v]) => kw('res', k, { qty: v })).join('')}</div>` : ''}
       ${bd ? `<div class="row"><span class="k">Building</span><span class="v">${BUILDINGS[bd.id].name}${bd.done ? '' : ' (blueprint)'}</span></div>
         <div class="mini">${esc(BUILDINGS[bd.id].desc)}</div>
-        ${bd.done ? `<div class="row"><span class="k">Integrity</span><span class="v">${Math.round(bd.hp)}</span></div>` : ''}
+        ${bd.done && bd.hp < (BUILDINGS[bd.id].hp || 120) ? meter({ label: 'Damaged', icon: '🧱', value: Math.round(bd.hp), max: BUILDINGS[bd.id].hp || 120, color: levelStatus(bd.hp / (BUILDINGS[bd.id].hp || 120)) }) : ''}
         ${bd.done && UPGRADES[bd.id] ? `<div class="row"><span class="k">Level</span><span class="v lvl-pips">${'●'.repeat(levelOf(bd))}${'○'.repeat(MAX_LEVEL - levelOf(bd))} ${levelOf(bd)}/${MAX_LEVEL}</span></div>
           <div class="mini">${esc(UPGRADES[bd.id].per)}</div>
           ${bd.upgrade ? `<div class="mini" style="color:var(--hi)">Upgrading to level ${bd.upgrade.to}: ${costLine(bd.upgrade.cost)}${hasAllOf(g, bd.upgrade.cost) ? '' : ' — waiting on materials or gold'}</div>` : ''}` : ''}` : ''}
       ${fl ? `<div class="row"><span class="k">Floor</span><span class="v">${FLOOR_ICON[fl.id] || ''} ${FLOORS[fl.id].name}${fl.done ? '' : ' (laying)'}</span></div>` : ''}
-      ${meter({ label: 'Light', icon: '💡', value: Math.round(w.light[i] * 100), max: 100, color: '#e2b23c' })}
-      ${meter({ label: 'Beauty', icon: '✨', value: +w.beauty[i].toFixed(1), max: 20, color: '#9085e9' })}
-      ${w.soil ? meter({ label: 'Soil', icon: '🟫', value: Math.round(w.soil[i] * 100), max: 100, color: '#c98500' }) : ''}
-      ${w.water ? meter({ label: 'Water', icon: '💧', value: Math.round(w.water[i] * 100), max: 100, color: '#3987e5' }) : ''}
-      <div class="sect">Actions</div><div id="tileacts"></div>`;
+      <div class="sect">Actions</div><div id="tileacts"></div>
+      ${this.fold('tile-survey', 'Survey', `<div class="mini">${esc(terr.name)}</div>
+        ${meter({ label: 'Light', icon: '💡', value: Math.round(w.light[i] * 100), max: 100, color: '#e2b23c' })}
+        ${meter({ label: 'Beauty', icon: '✨', value: +w.beauty[i].toFixed(1), max: 20, color: '#9085e9' })}
+        ${w.soil ? meter({ label: 'Soil', icon: '🟫', value: Math.round(w.soil[i] * 100), max: 100, color: '#c98500' }) : ''}
+        ${w.water ? meter({ label: 'Water', icon: '💧', value: Math.round(w.water[i] * 100), max: 100, color: '#3987e5' }) : ''}`)}`;
     const box = b.querySelector('#tileacts');
     const add = (label, fn, cls) => { const btn = el('button', 'act ' + (cls || ''), label); btn.onclick = () => { fn(); this.renderInspector(); this.renderer.cacheVersion = -1; }; box.appendChild(btn); };
     if (bd && bd.done && BUILDINGS[bd.id].job === 'farm') {
@@ -3737,7 +4037,7 @@ export class UI {
         color: powerOf(r) > best ? STATUS.critical : STATUS.good,
         note: powerOf(r) > best ? 'stronger than anyone at home' : `your best fields ${best}`,
       })
-      + `<div class="sect">Traits</div><div>${r.traits.map(t => `<span class="tag" data-tip="trait:${t}">${TRAITS[t].name}</span>`).join('')}</div>
+      + `<div class="sect">Traits</div><div>${kwList('trait', r.traits)}</div>
       <div class="sect">Gear</div>
       <div class="mini">⚔️ ${r.equipment.weapon ? esc(r.equipment.weapon.name) : 'unarmed'} · 🛡️ ${r.equipment.armor ? esc(r.equipment.armor.name) : 'no armour'}</div>`;
   }
@@ -3765,7 +4065,7 @@ export class UI {
       ${A.pack ? `<div class="row"><span class="k">🎒 Pack capacity</span><span class="v">+${A.pack}</span></div>` : ''}
       ${b.pregnant > 0 ? `<div class="row"><span class="k">🤰 Pregnant</span><span class="v">${b.pregnant.toFixed(1)}d left</span></div>` : ''}
       <div class="sect">Traits</div>
-      <div>${b.traits.length ? b.traits.map(t => `<span class="tag" data-tip="btrait:${t}">${BEAST_TRAITS[t].name}</span>`).join('') : '<span class="mini">Unremarkable.</span>'}</div>
+      <div>${kwList('btrait', b.traits, '<span class="mini">Unremarkable.</span>')}</div>
       <div class="sect">Orders</div><div id="beastacts"></div>`;
     const box = body.querySelector('#beastacts');
     if (b.tame) {
@@ -3812,7 +4112,33 @@ export class UI {
       ${s.stock ? `<div class="sect">Produces</div>${Object.entries(s.stock).map(([k, v]) => `<div class="row"><span class="k">${RESOURCE_ICON[k] || ''} ${RESOURCES[k]?.name || k}</span><span class="v">${v}</span></div>`).join('')}` : ''}
       ${s.raidsLaunched ? `<div class="sect">Threat</div><div class="mini">${s.raidsLaunched} raid(s) have come from here.</div>` : ''}
       ${s.cleared ? '<div class="mini" style="color:var(--good)">Cleared.</div>' : ''}
-`;
+      ${this.siteJourneyHtml(s)}`;
+    const box = $('#inspector .insp-body');
+    box.onclick = (e) => {
+      const b = e.target.closest && e.target.closest('[data-site-go]');
+      if (!b || b.disabled) return;
+      const ids = [...this.squad].filter(id => { const c = g.colonists.find(x => x.id === id); return c && !c.away && !(c.mapId || 0); });
+      const r = sendJourney(g, ids, s.id, b.dataset.siteGo);
+      if (r) this.toast(r, 'warn'); else { this.flash(`${ERRANDS[b.dataset.siteGo].name}: they set out for ${s.name}.`, 'good'); this.squad.clear(); }
+      this.sigs.insp = null; this.renderInspector(); this.sigs.drawer = null; this.renderDrawer();
+    };
+  }
+  /** A site's offer to a party: what's there to get, how far, and the button that sends them. */
+  siteJourneyHtml(s) {
+    const g = this.game;
+    const pv = siteRewardPreview(g, s, Math.max(1, this.squad.size));
+    if (!pv) return '';
+    const party = [...this.squad].map(id => g.colonists.find(c => c.id === id)).filter(c => c && !c.away && !(c.mapId || 0));
+    const days = journeyDays(g, s);
+    const E = ERRANDS[pv.errand];
+    const reward = [...Object.entries(pv.res || {}).map(([k, q]) => kw('res', k, { qty: q })), pv.text ? `<span class="mini">${esc(pv.text)}</span>` : ''].join(' ');
+    const odds = pv.errand === 'clear' && party.length ? clearOdds(party, s) : null;
+    const why = !party.length ? 'Select who goes on the colonist bar first.' : pv.ready === false ? 'Pilgrims went lately — wait a few days.' : '';
+    return `<div class="sect">🧭 Journey <em>${days} day${days === 1 ? '' : 's'} there and back</em></div>
+      <div class="mini">${esc(E.desc)}</div>
+      <div class="goal-rw"><span class="mini">Brings back</span>${reward}${pv.first ? '<span class="kw kw-good"><i>✨</i>first haul doubled</span>' : ''}</div>
+      ${pv.risk ? `<div class="mini" style="color:var(--warn)">⚠️ ${odds != null ? `${Math.round(odds * 100)}% chance this party wins.` : 'It may be guarded.'} Send fighters.</div>` : ''}
+      <div class="ct-row"><button class="act primary" data-site-go="${pv.errand}"${why ? ` disabled data-tipt="${esc(why)}"` : ''}>🧭 ${esc(E.name)}${party.length ? ` — send ${party.map(c => esc(c.name.short)).join(', ')}` : ''}</button></div>`;
   }
 
   inspHistory(h) {
@@ -3923,7 +4249,7 @@ export class UI {
       box.innerHTML = `<div class="an">${FLOOR_ICON[floorId] || ''} ${esc(def.name)}</div>
         <div class="ad">${esc(def.desc)}</div>
         <div class="ad">Cost: ${Object.entries(def.cost).map(([k, v]) =>
-          `<span style="color:${(g.resources[k] || 0) >= v ? 'var(--ink)' : 'var(--danger)'}">${RESOURCE_ICON[k] || ''} ${v} ${RESOURCES[k].name}</span>`).join(' · ')}
+          kw('res', k, { qty: v, state: (g.resources[k] || 0) >= v ? undefined : 'bad' })).join('')}
           · Work ${Math.round(def.work)}</div>
         ${short.length ? `<div class="ad" style="color:var(--danger)">Short of ${short.map(([k, v]) => `${Math.ceil(v - (g.resources[k] || 0))} ${RESOURCES[k].name}`).join(' and ')}</div>` : ''}`;
       return;
@@ -3934,7 +4260,7 @@ export class UI {
     box.innerHTML = `<div class="an">${BUILDING_ICON[id] || ''} ${esc(def.name)}</div>
       <div class="ad">${esc(def.desc)}</div>
       <div class="ad">Cost: ${Object.entries(def.cost).map(([k, v]) =>
-        `<span style="color:${(g.resources[k] || 0) >= v ? 'var(--ink)' : 'var(--danger)'}">${RESOURCE_ICON[k] || ''} ${v} ${RESOURCES[k].name}</span>`).join(' · ')}
+        kw('res', k, { qty: v, state: (g.resources[k] || 0) >= v ? undefined : 'bad' })).join('')}
         · Work ${Math.round(def.work)}</div>
       ${!g.unlocked.has(id) ? (() => { const tech = unlockerOf(id), R = RESEARCH[tech]; const q = g.research.current === tech || g.research.queue.includes(tech);
         return `<div class="ad" style="color:var(--warn)">🔒 Needs research: <b>${esc(R ? R.name : tech)}</b>${q ? ' — queued' : ' — click to queue it'}</div>`; })()

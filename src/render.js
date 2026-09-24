@@ -22,6 +22,7 @@ import { TERRAIN, FEATURES, T, anchorFor } from './world.js';
 import { BUILDINGS, FLOORS, RACES } from './data.js';
 import { ANIMALS } from './husbandry.js';
 import { BIOMES, SITE_KINDS } from './overworld.js';
+import { siteErrand } from './economy.js';
 import { CROPS, growthStage } from './farming.js';
 import { BIOMES_RIFT } from './biomes.js';
 import { STATUSES } from './elements.js';
@@ -3395,6 +3396,13 @@ export function drawOverworld(canvas, game, opts = {}) {
       ctx.font = `${Math.max(8, cell * 2)}px ui-monospace, monospace`;
       ctx.fillStyle = K.color;
       ctx.fillText(K.glyph, gx, gy);
+    }
+    // A gold "!" where a party could go and come back with something.
+    if (siteErrand(s) && !(s.kind === 'shrine' && s.pilgrimDay > game.day - 10)) {
+      const bx = gx + iconSize * 0.45, by = gy - iconSize * 0.45, r = Math.max(4, iconSize * 0.24);
+      ctx.fillStyle = '#eec45c'; ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#1c1605'; ctx.font = `bold ${Math.round(r * 1.6)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('!', bx, by + 0.5);
     }
     if (opts.selected && opts.selected.id === s.id) {
       ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;

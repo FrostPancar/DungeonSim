@@ -15,7 +15,7 @@ const OUT = join(root, 'riftgate.html');
 const MODULES = [
   'rng', 'occupancy', 'icons', 'chart', 'data', 'elements', 'prestige', 'classes', 'items', 'names', 'overworld', 'npc', 'farming', 'husbandry', 'monsters', 'biomes', 'magic', 'combat', 'sprites', 'iconsheet', 'pixicons',
   'world', 'colony', 'social', 'dungeon', 'expedition', 'realtime', 'events', 'economy', 'floors',
-  'game', 'autoplay', 'save', 'render', 'tips', 'ui',
+  'game', 'autoplay', 'save', 'render', 'keywords', 'tutorial', 'tips', 'ui',
 ];
 
 function strip(src, name) {

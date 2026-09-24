@@ -58,20 +58,29 @@ tiles, and a tile holds one body — squads form up around a move order.
 | Pan | left-drag (in Select), middle-drag or space-drag · arrow keys | one-finger drag |
 | Zoom | scroll wheel | pinch |
 | Select for orders | click a colonist (yellow outline) | tap |
-| Inspect | click anything else, or a portrait in the colonist bar | tap |
+| Inspect | click a building, tree, rock or creature, or a portrait in the colonist bar (bare ground closes the panel) | tap |
 | Select several | right-drag a box · shift to add · ⌘/ctrl-A for everyone | Squad tool, then drag |
 | Move / interact | right-click a tile: sends the selection there (a dashed line shows the way). On rock, a tree or a blueprint the selection surrounds it and works it together, each extra hand adding speed; on an enemy they close in to fight | — |
 | Area order | pick it in Build, then left-drag | same |
 
 Keys: `space` pause · `1-4` speed · `M` mine · `H` harvest · `X` cancel (orders
 are keys only — then left-drag the area) · `B` build window · `G` squad ·
-`W` people · `C` colony · `O` soil/water overlay · `?` help and legend ·
+`W` people · `C` colony · `R` research · `T` Rift · `N` world · `O` soil/water overlay · `?` help and legend ·
 `Esc` closes the innermost thing.
 
 You start with **one knight and five peasants**. The knight is a fighter with a
 skill tree; the peasants are unclassed labourers who work by day and **sleep
 from dusk to dawn unless you order them to do something**. Classes come from
-schools, tomes and recruits. Everyone has **stamina**: it drains while they're
+schools, tomes and recruits: the camp starts with **one Class Tome**, the
+**Militia** research (a root of the tree) opens the Combat School, and peasants
+who drill at a Training Dummy grow strong or quick enough for a Combat class.
+**People › Classes** shows who can become what, with one click to enrol.
+
+A **Getting started** tracker at the top of the alerts walks through the first
+days, one line at a time. Skip it from its card, and replay it from the `?` help.
+The Rift tab leads with the **goal**: break the lair on the bottom floor before
+the Rift deepens, and what that pays. Places marked **!** on the World map have
+something to go and get (resources to gather, ruins to search, camps to clear). Everyone has **stamina**: it drains while they're
 awake, faster when they work, walk or fight. Low stamina slows work, movement
 and swings, and at zero they collapse and sleep where they stand. Monsters tire
 too: a hunter that chases long enough gives up and goes home.

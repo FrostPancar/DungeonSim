@@ -47,6 +47,9 @@ const INCIDENTS = [
 
 export function maybeIncident(game) {
   if (game.tick < 600) return;
+  // The first caravan always comes by day 3: selling to one is where most of a
+  // young camp's gold comes from, so every player should meet one early.
+  if (!game.root.metCaravan && !game.caravan && game.root.day >= 3 && game.root.hour >= 9) return runIncident(game, 'caravan');
   if (game.tick < game.nextIncidentTick) return;
   const t = threatLevel(game);
   const gap = clamp(1350 - t * 55, 430, 1350);
@@ -119,7 +122,8 @@ function incCaravan(game, t) {
     expires: game.tick + 1400,
     trader: generateNPC(rng, { faction, tier: Math.round(t) }),
   };
-  game.log(`A caravan from ${name} arrives to trade.`, 'good');
+  game.root.metCaravan = true;
+  game.log(`A caravan from ${name} arrives to trade. Sell spare goods for gold in World › Market.`, 'good');
   fillOrders(game);
 }
 
@@ -463,6 +467,7 @@ export function tradeSell(game, res, qty) {
   game.resources[res] -= qty;
   addResource(game, 'gold', value);
   game.log(`Sold ${qty} ${RESOURCES[res].name} for ${value} gold.`, 'info');
+  game.root.stats.sold = (game.root.stats.sold || 0) + 1;
   gainStanding(game, value * 0.05);
   return true;
 }

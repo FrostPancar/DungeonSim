@@ -1319,6 +1319,89 @@ button.act.small{min-height:22px;padding:1px 7px;font-size:11.5px;margin:0}
 .ctxmenu .cm-it.danger span:nth-child(2){color:#ffb9ab}
 .ctxmenu kbd{font:10px ui-monospace,monospace;color:var(--ink2,#9aa3ad);border:1px solid rgba(255,255,255,.15);border-radius:3px;padding:0 4px}
 
+/* ==========================================================================
+   Onboarding & legibility pass (docs/ui-roadmap.md, docs/tutorial-roadmap.md)
+   ========================================================================== */
+/* --- folds: reference data tucked under a "Details ▾" line --- */
+details.fold{margin:12px 0 4px;border-top:1px solid var(--line);padding-top:6px}
+details.fold>summary{cursor:pointer;list-style:none;color:var(--dim);font-size:11px;font-weight:600;
+  letter-spacing:.06em;text-transform:uppercase;padding:2px 0}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>summary::after{content:" ▾";color:var(--dim2)}
+details.fold[open]>summary::after{content:" ▴"}
+details.fold>summary:hover{color:var(--ink)}
+
+/* --- keywords (src/keywords.js): one look for traits, resources, classes --- */
+.kw{display:inline-flex;align-items:center;gap:4px;min-height:20px;margin:2px 3px 2px 0;padding:1px 8px;border-radius:999px;
+  background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.11);color:var(--ink);font-size:11px;font-weight:600;
+  line-height:1.2;white-space:nowrap;vertical-align:middle;cursor:var(--cur-arrow)}
+.kw>i{font-style:normal;font-size:10px;line-height:1}
+.kw>b{font-weight:700}
+.kw-good{background:rgba(124,198,106,.13);border-color:rgba(124,198,106,.42);color:#c3eab6}
+.kw-good>i{color:var(--good)}
+.kw-bad{background:rgba(228,86,86,.13);border-color:rgba(228,86,86,.45);color:#ffb9ab}
+.kw-bad>i{color:var(--danger)}
+.kw-mixed{background:rgba(226,184,76,.1);border-color:rgba(226,184,76,.38);color:#f5dc92}
+.kw-mixed>i{color:var(--warn)}
+.kw-scarce{border-color:rgba(228,86,86,.6);color:#ffb9ab}
+.kw-locked{opacity:.6}
+.kw-res>i,.kw-bld>i,.kw-class>i{font-size:12px}
+.kw-good-ink{color:var(--good)} .kw-bad-ink{color:var(--danger)} .kw-mixed-ink{color:var(--warn)}
+
+/* --- People › Classes --- */
+.cls-intro{margin:4px 0 10px}
+.cls-intro .ct-row{margin-top:6px;flex-wrap:wrap}
+.cls-row{grid-template-columns:auto minmax(120px,1fr) 2fr}
+.cls-do{display:flex;flex-wrap:wrap;gap:4px;align-items:center;justify-content:flex-end}
+.ct-tac.ready{border-color:var(--hi-line);background:var(--hi-bg);color:var(--hi)}
+.tab-dot{display:inline-block;width:7px;height:7px;margin-left:4px;border-radius:50%;background:var(--hi);vertical-align:middle}
+
+/* --- the Rift's goal card: where the lair is, and what it pays --- */
+.goal-card{margin:10px 0 4px;padding:10px 12px;border:1px solid var(--hi-line);border-radius:var(--r3);background:var(--hi-bg)}
+.goal-card.done{border-color:rgba(124,198,106,.45);background:rgba(124,198,106,.08)}
+.goal-h{display:flex;gap:10px;align-items:flex-start}
+.goal-ic{font-size:22px;line-height:1}
+.goal-t{font-weight:700;font-size:14px;color:var(--hi);margin-bottom:2px}
+.goal-card.done .goal-t{color:var(--good)}
+.goal-rw{display:flex;flex-wrap:wrap;align-items:center;gap:2px;margin-top:8px}
+.goal-rw>.mini:first-child{min-width:120px;margin-right:4px}
+.lair-win{text-align:left}
+.lair-win h2{margin:6px 0 4px;color:var(--hi)}
+.lw-ic{font-size:34px;line-height:1}
+
+/* --- gold leads the resource readout, with its trend --- */
+.rr.gold-rr i{color:var(--hi)}
+.rr.gold-rr em{font-style:normal;font-size:10px;font-weight:700;min-width:34px}
+.rr.gold-rr em.up{color:var(--good)}
+.rr.gold-rr em.dn{color:var(--danger)}
+
+/* --- the main tabs: a ring where a decision is waiting --- */
+.mt.urgent{box-shadow:inset 0 -2px 0 var(--hi),inset 0 0 0 1px var(--hi-line);color:#fff}
+.mt.urgent .ri{animation:mt-nudge 2.4s ease-in-out 2}
+@keyframes mt-nudge{0%,100%{transform:none}50%{transform:translateY(-2px) scale(1.12)}}
+/* --- alerts: decisions stand out; the rest fold away --- */
+.al.decision{border-left-color:var(--hi);background:rgba(58,46,14,.94);border-color:var(--hi-line);color:#fff1c9}
+.al.more{justify-content:flex-end;color:var(--dim);font-size:11px;padding-top:2px;padding-bottom:2px}
+.al.more:hover{color:var(--ink)}
+
+/* --- tutorial tracker, pinned above the alerts --- */
+.al.tut{align-items:flex-start;max-width:330px;border-left-color:var(--hi);border-color:var(--hi-line);background:rgba(34,29,14,.96);color:#fff}
+.al.tut .ai{font-size:16px;padding-top:2px}
+.tut-b{display:flex;flex-direction:column;gap:3px;min-width:0}
+.tut-h{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--hi)}
+.tut-h button{border:0;background:transparent;color:var(--dim);font-size:10px;cursor:pointer;padding:0 2px;text-transform:none;letter-spacing:0}
+.tut-h button:hover{color:var(--ink)}
+.al.tut .at{font-size:13px;font-weight:600;line-height:1.3;white-space:normal}
+.tut-p{display:flex;gap:3px;margin-top:2px}
+.tut-p i{width:14px;height:4px;border-radius:2px;background:rgba(255,255,255,.12)}
+.tut-p i.on{background:var(--good)}
+.tut-p i.now{background:var(--hi)}
+.tut-pulse{position:relative;animation:tut-ring 1.6s ease-out infinite;z-index:2}
+@keyframes tut-ring{0%{box-shadow:0 0 0 0 rgba(238,196,92,.75)}70%{box-shadow:0 0 0 10px rgba(238,196,92,0)}100%{box-shadow:0 0 0 0 rgba(238,196,92,0)}}
+.wd-rw{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:var(--hi);color:var(--hi-ink);font-size:10px;font-weight:800;vertical-align:middle}
+.mood-why{margin:2px 0 6px;font-size:12px;font-weight:600;line-height:1.5}
+.tn-out{display:block;font-style:normal;font-size:10px;font-weight:700;color:var(--hi);line-height:1.1}
+
 </style>
 </head>
 <body>
@@ -1781,7 +1864,7 @@ function moodStatus(mood) {
 /** Research projects, for the tech tree and its tooltips. */
 const TECH_ICON = {
   masonry: '🧱', husbandry: '🍄', smelting: '🔥', herbalism: '🌿', letters: '📜',
-  drilling: '⛏️', arcana1: '🌀', drill_corps: '🛡️', wardstone: '🔮', relicry: '🏺',
+  drilling: '⛏️', arcana1: '🌀', drill_corps: '🛡️', militia: '🎓', wardstone: '🔮', relicry: '🏺',
   deepmaps: '🗺️', agriculture: '🌾', ranching: '🐄', stockbreed: '🐑', cartography: '🧭',
   logistics: '📦', arcane_theory: '🎓', devotion: '🙏', martial_doctrine: '🏰', high_arcana: '🔮', theology: '🕍',
   fortification: '🚧', siege_craft: '🏹', siege_mastery: '🎯', arcane_engineering: '🪄', archival_science: '📚',
@@ -2219,6 +2302,30 @@ const RESOURCES = {
   potion:   { name: 'Potions',   color: '#e06ab0', cat: 'goods' },
 };
 const RESOURCE_IDS = Object.keys(RESOURCES);
+// Where a resource comes from and what spends it, beyond what the data already
+// says (veins, recipes, crops and building costs are read off their tables).
+// Shown on every resource tooltip so "where does gold come from?" has an answer.
+const RESOURCE_SOURCES = {
+  gold: ['🐫 Selling to caravans (World › Market) — most of a young camp\'s gold', '🌀 Rift loot, carried home', '🪙 Gold veins, mined', '🏪 Your own shops, once built'],
+  iron: ['⛏️ Iron veins', '🌀 Rift loot (mines and forges below)', '🐫 Caravans'],
+  gems: ['⛏️ Gem seams', '🌀 Rift loot'],
+  dust: ['⛏️ Crystal seams', '🌀 Rift loot (sanctums, hives)'],
+  relics: ['🌀 Rift loot and lair hoards'],
+  riftshard: ['🌀 Only below floor 1, and from lairs'],
+  leather: ['🔪 Butchering livestock', '🌀 Rift loot (warrens, hollows)', '⚒️ Worked Goods'],
+  knowledge: ['📚 Researchers at a Library', '💠 Rift shards carried home'],
+  potion: ['⚗️ An Alchemy Table', '🏪 The Apothecary'],
+};
+const RESOURCE_USES = {
+  gold: ['🏗️ Shops and big buildings', '🧪 Potions and gear from shops', '🚪 Recruits at the gate', '📅 Wages for classed colonists and sellswords'],
+  leather: ['⚒️ Forge tiers (leather armour)', '🎒 Packs: more loot carried per delver'],
+  riftshard: ['📖 Turned into research when carried home'],
+  knowledge: ['🔬 Research'],
+  relics: ['🐫 Sold to caravans', '🏛️ Late wonders (Reliquary, Monument)'],
+  potion: ['🌀 Carried into the Rift: healing mid-fight'],
+  meal: ['🍽️ Eating — worth more than raw food'],
+  gear: ['⚒️ Forging and upgrading equipment'],
+};
 
 // --- Buildings --------------------------------------------------------------
 // cat groups them in the build bar. work = build effort in work-units.
@@ -2240,9 +2347,9 @@ const BUILDINGS = {
   carpenter: { name: 'Carpenter Bench', cat: 'production',cost: { wood: 20, stone: 5 },    work: 50,  solid: false, glyph: 'n', job: 'craft', recipe: 'planks', desc: 'Makes cloth and worked goods.' },
   smithy:    { size: [2, 2], walled: true, name: 'Smithy',          cat: 'production',cost: { stone: 25, iron: 8 },    work: 80,  solid: false, glyph: 'm', job: 'craft', recipe: 'gear', desc: 'Forges weapons and armour.' },
   alchemy:   { name: 'Alchemy Table',   cat: 'production',cost: { wood: 15, gems: 3, herbs: 5 }, work: 70, solid: false, glyph: 'a', job: 'craft', recipe: 'potion', desc: 'Brews potions from herbs.' },
-  library:   { size: [3, 2], walled: true, name: 'Library',         cat: 'production',cost: { wood: 25, stone: 10, gold: 5 }, work: 90, solid: false, glyph: 'L', job: 'research', desc: 'Generates Insight for research.' },
+  library:   { size: [3, 2], walled: true, name: 'Library',         cat: 'production',cost: { wood: 30, stone: 10 }, work: 90, solid: false, glyph: 'L', job: 'research', desc: 'Generates Insight for research.' },
   infirmary: { size: [3, 2], walled: true, name: 'Infirmary',       cat: 'production',cost: { wood: 18, cloth: 8, herbs: 4 }, work: 60, solid: false, glyph: 'h', job: 'heal', desc: 'Treats wounds much faster.' },
-  training:  { name: 'Training Dummy',  cat: 'martial',   cost: { wood: 12, leather: 4 },  work: 40,  solid: false, glyph: 'x', job: 'train', desc: 'Raises Melee and Marksman.' },
+  training:  { name: 'Training Dummy',  cat: 'martial',   cost: { wood: 12, leather: 4 },  work: 40,  solid: false, glyph: 'x', job: 'train', desc: 'Peasants drill here until they are strong or quick enough for a Combat class. Classed fighters sharpen Melee and Marksman.' },
   shrine:    { name: 'Shrine',          cat: 'martial',   cost: { stone: 20, gold: 8 },    work: 65,  solid: false, glyph: 'A', job: 'pray', beauty: 6, desc: 'Faith training, mood buffer.' },
   barricade: { name: 'Barricade',       cat: 'martial',   cost: { wood: 8, stone: 4 },     work: 25,  solid: true,  glyph: 'X', hp: 240, desc: 'Cheap defensive block.' },
   watchpost: { name: 'Watchpost',       cat: 'martial',   cost: { wood: 15, stone: 10 },   work: 55,  solid: false, glyph: 'V', watch: 1, desc: 'Earlier raid warning, defence bonus.' },
@@ -2252,7 +2359,7 @@ const BUILDINGS = {
   butchery:  { name: 'Butcher Block',   cat: 'farm',      cost: { wood: 15, iron: 4 },     work: 45,  solid: false, glyph: 'Ϟ', job: 'butcher', desc: 'Slaughter stock for meat and hide.' },
   compost:   { name: 'Compost Heap',    cat: 'farm',      cost: { wood: 8 },               work: 25,  solid: false, glyph: 'o', job: 'compost', desc: 'Restores fertility to nearby fields.' },
   field:     { name: 'Field',           cat: 'farm',      cost: { wood: 4 },               work: 22,  solid: false, glyph: '\u2261', job: 'farm', desc: 'Plant a crop. Yield depends on soil, water and season.' },
-  combat_school:    { size: [3, 3], walled: true, name: 'Combat School',    cat: 'martial',    cost: { wood: 60, stone: 40, iron: 10 },            work: 140, solid: false, glyph: 'C', school: 'combat', desc: 'Trains commoners into Fighters, Barbarians, Rogues, Rangers and Monks. Class XP up to level 10.' },
+  combat_school:    { size: [3, 3], walled: true, name: 'Combat School',    cat: 'martial',    cost: { wood: 40, stone: 30, iron: 4 },            work: 140, solid: false, glyph: 'C', school: 'combat', desc: 'Trains commoners into Fighters, Barbarians, Rogues, Rangers and Monks. Class XP up to level 10.' },
   mage_school:      { size: [3, 3], walled: true, name: 'Mage School',      cat: 'martial',    cost: { wood: 40, stone: 30, dust: 15, gems: 5 },   work: 150, solid: false, glyph: 'M', school: 'mage', desc: 'Trains Wizards, Warlocks, Bards and Artificers. Class XP up to level 10.' },
   temple:           { name: 'Temple',           cat: 'martial',    cost: { stone: 50, wood: 20, gold: 15 },            work: 150, solid: false, glyph: 'T', school: 'temple', beauty: 4, desc: 'Trains Clerics, Druids and Paladins. Class XP up to level 10.' },
   knight_academy:   { size: [4, 3], walled: true, name: 'Knight Academy',   cat: 'martial',    cost: { stone: 120, iron: 40, gold: 20 },           work: 260, solid: false, glyph: 'K', school: 'combat', academy: true, desc: 'Opens tiers 3–4 and prestige paths for combat classes. Class XP up to level 20.' },
@@ -2332,7 +2439,10 @@ const RESEARCH = {
   letters:    { name: 'Letters',          cost: 180,  req: [],             unlock: ['library'],             bonus: { researchRate: 0.2 }, desc: 'Insight generation.' },
   drilling:   { name: 'Deep Drilling',    cost: 600,  req: ['smelting'],   unlock: [],                      bonus: { mineYield: 0.4 }, desc: '+40% mining yield.' },
   arcana1:    { name: 'Rift Lore',        cost: 420,  req: ['letters'],    unlock: [],                      bonus: { loot: 0.1, ward: 0.1 }, desc: 'Read the Rift: +10% loot, nightly waves 10% weaker.' },
-  drill_corps:{ name: 'Drill Corps',      cost: 520,  req: ['smelting'],   unlock: ['training','watchpost','combat_school'], bonus: { combat: 0.12 }, desc: 'Trained militia, and a school to train them.' },
+  // Classes are the heart of the game, so the first school sits at the root of
+  // the tree, one cheap project in (docs/progression-roadmap.md P0-1).
+  militia:    { name: 'Militia',          cost: 100,  req: [],             unlock: ['training','combat_school'], desc: 'Combat classes: a Combat School to train Fighters, Barbarians, Rogues, Rangers and Monks, and a Training Dummy to drill peasants toward them.' },
+  drill_corps:{ name: 'Drill Corps',      cost: 520,  req: ['militia', 'smelting'], unlock: ['watchpost'], bonus: { combat: 0.12 }, desc: 'Drilled militia: +12% combat, and watchposts to warn of raids.' },
   arcane_theory:{ name: 'Arcane Theory',  cost: 320,  req: ['letters'],    unlock: ['mage_school'],         desc: 'Magic can be taught. Opens the Mage School and the arcane peddlers.' },
   devotion:   { name: 'Devotion',         cost: 260,  req: [],             unlock: ['temple'],              desc: 'Faith, organised. Opens the Temple.' },
   martial_doctrine:{ name: 'Martial Doctrine', cost: 1000, req: ['drill_corps'], unlock: ['knight_academy'], desc: 'Knightly orders: tiers 3–4 for combat classes.' },
@@ -3527,8 +3637,40 @@ function classRequirement(npc, klass) {
   const attr = npc.attributes[C.primary] || 0;
   const mainSkill = Object.entries(C.skills).sort((a, b) => b[1] - a[1])[0][0];
   const burning = npc.passions && npc.passions[mainSkill] === 'burning';
-  if (attr < 12 && !(burning && attr >= 10)) return `Needs ${C.primary.toUpperCase()} 12 (has ${attr}).`;
+  if (attr < 12 && !(burning && attr >= 10)) {
+    const drill = CLASS_INFO[klass] && CLASS_INFO[klass].school === 'combat' ? ' Drill at a Training Dummy to raise it.' : '';
+    return `Needs ${C.primary.toUpperCase()} 12 (has ${attr}).${drill}`;
+  }
   return '';
+}
+
+// --- drilling: the Training Dummy's way into a Combat class --------------------
+// A peasant too weak or slow for any Combat class can drill until they aren't:
+// every DRILL_SESSIONS sessions at a dummy lift the most promising Combat
+// attribute by one, and it stops at 12 — the bar, not a way past it.
+const DRILL_SESSIONS = 6;
+const DRILL_CAP = 12;
+/** The attribute drilling would raise, or null once any Combat class is open to them. */
+function drillTarget(npc) {
+  if (CLASS_INFO[npc.klass] && CLASS_INFO[npc.klass].school === 'combat') return null;
+  let best = null;
+  for (const [k, info] of Object.entries(CLASS_INFO)) {
+    if (info.school !== 'combat') continue;
+    const attr = CLASSES[k].primary, v = npc.attributes[attr] || 0;
+    if (!classRequirement(npc, k)) return null;
+    if (v < DRILL_CAP && (!best || v > best.value)) best = { attr, value: v, klass: k };
+  }
+  return best;
+}
+/** One session at the dummy. Returns the attribute raised this session, if any. */
+function drillSession(npc) {
+  const t = drillTarget(npc);
+  if (!t) return null;
+  npc.drill = (npc.drill || 0) + 1;
+  if (npc.drill < DRILL_SESSIONS) return null;
+  npc.drill = 0;
+  npc.attributes[t.attr] = Math.min(DRILL_CAP, (npc.attributes[t.attr] || 0) + 1);
+  return t.attr;
 }
 
 /**
@@ -10099,23 +10241,39 @@ function addThought(npc, id, mult = 1) {
   if (npc.thoughts.length > 14) npc.thoughts.shift();
 }
 
-function updateMood(game, npc) {
-  let m = 50 + traitMod(npc, 'mood');
+/**
+ * Everything pushing a colonist's mood up or down right now, as labelled
+ * amounts on top of a base of 50. updateMood sums exactly this, so the reasons
+ * a panel shows are the reasons the number is what it is.
+ */
+function moodBreakdown(game, npc) {
+  const out = [];
+  const base = traitMod(npc, 'mood');
+  if (base) out.push({ id: 'nature', label: 'Traits, wounds and gear', v: base });
   for (const t of npc.thoughts) {
     const def = THOUGHTS[t.id];
     if (def.dur === 0) continue; // transient handled below
-    m += def.v * Math.min(2, 0.6 + t.stacks * 0.4) * (t.mult || 1);
+    out.push({ id: t.id, label: def.name + (t.stacks > 1 ? ` ×${t.stacks}` : ''), v: def.v * Math.min(2, 0.6 + t.stacks * 0.4) * (t.mult || 1) });
   }
   const n = npc.needs;
-  if (n.hunger < 0.12) m += THOUGHTS.starving.v;
-  else if (n.hunger < 0.3) m += THOUGHTS.hungry.v;
-  if (n.rest < 0.15) m += THOUGHTS.exhausted.v;
-  if (npc.injuries.length) m += THOUGHTS.wounded.v * Math.min(3, npc.injuries.length) * 0.6;
-  const i = game.world.idx(npc.x, npc.y);
-  const beauty = game.world.beauty[i];
-  if (beauty > 6) m += THOUGHTS.beauty.v;
-  else if (beauty < 0.5 && game.world.light[i] < 0.15) m += THOUGHTS.dark.v;
-  m += (game.bonuses.moodFlat || 0);
+  if (n.hunger < 0.12) out.push({ id: 'starving', label: THOUGHTS.starving.name, v: THOUGHTS.starving.v });
+  else if (n.hunger < 0.3) out.push({ id: 'hungry', label: THOUGHTS.hungry.name, v: THOUGHTS.hungry.v });
+  if (n.rest < 0.15) out.push({ id: 'exhausted', label: THOUGHTS.exhausted.name, v: THOUGHTS.exhausted.v });
+  if (npc.injuries.length) out.push({ id: 'wounded', label: THOUGHTS.wounded.name, v: THOUGHTS.wounded.v * Math.min(3, npc.injuries.length) * 0.6 });
+  const w = game.world;
+  if (w.inside(npc.x, npc.y)) {
+    const i = w.idx(npc.x, npc.y);
+    const beauty = w.beauty[i];
+    if (beauty > 6) out.push({ id: 'beauty', label: THOUGHTS.beauty.name, v: THOUGHTS.beauty.v });
+    else if (beauty < 0.5 && w.light[i] < 0.15) out.push({ id: 'dark', label: THOUGHTS.dark.name, v: THOUGHTS.dark.v });
+  }
+  if (game.bonuses.moodFlat) out.push({ id: 'colony', label: 'Colony bonuses', v: game.bonuses.moodFlat });
+  return out;
+}
+
+function updateMood(game, npc) {
+  let m = 50;
+  for (const r of moodBreakdown(game, npc)) m += r.v;
   npc.mood = clamp(Math.round(m), 0, 100);
   npc.moodAvg = npc.moodAvg * 0.995 + npc.mood * 0.005;
 }
@@ -10178,7 +10336,7 @@ function dropItems(game, x, y, yields, mult = 1) {
 }
 
 /** How much a colonist can carry out of the Rift: strong backs carry more. */
-function packCap(npc) { return 60 + ((npc.attributes && npc.attributes.str) || 10) * 3 + (npc.packBonus || 0); }
+function packCap(npc) { return 60 + ((npc.attributes && npc.attributes.str) || 10) * 3 + (npc.packBonus || 0) + (npc.packUpgrade || 0); }
 function packLoad(npc) { let n = 0; for (const k in npc.pack || {}) n += npc.pack[k]; return n; }
 function packRoom(npc) { return Math.max(0, packCap(npc) - packLoad(npc)); }
 
@@ -10728,7 +10886,17 @@ function completeTask(game, npc) {
       }
       break;
     }
-    case 'train': { gainXp(game, npc, t.trainSkill || (game.rng.chance(0.6) ? 'melee' : 'ranged'), 55); npc.needs.joy = clamp(npc.needs.joy + 0.05, 0, 1); break; }
+    case 'train': {
+      gainXp(game, npc, t.trainSkill || (game.rng.chance(0.6) ? 'melee' : 'ranged'), 55); npc.needs.joy = clamp(npc.needs.joy + 0.05, 0, 1);
+      const raised = drillSession(npc);
+      if (raised) {
+        refresh(npc);
+        const open = drillTarget(npc) === null;
+        game.log(open ? `${npc.name.short} has drilled hard enough: a Combat class is open to them now.`
+          : `${npc.name.short} is getting ${raised === 'str' ? 'stronger' : raised === 'dex' ? 'quicker' : 'better'} at the dummy (${raised.toUpperCase()} ${npc.attributes[raised]}).`, open ? 'good' : 'info', npc.id);
+      }
+      break;
+    }
     case 'pray': { gainXp(game, npc, 'faith', 55); addThought(npc, 'joy'); break; }
     case 'heal': {
       const patient = game.colonists.find(c => c.id === t.target);
@@ -12203,6 +12371,9 @@ const INCIDENTS = [
 ];
 function maybeIncident(game) {
   if (game.tick < 600) return;
+  // The first caravan always comes by day 3: selling to one is where most of a
+  // young camp's gold comes from, so every player should meet one early.
+  if (!game.root.metCaravan && !game.caravan && game.root.day >= 3 && game.root.hour >= 9) return runIncident(game, 'caravan');
   if (game.tick < game.nextIncidentTick) return;
   const t = threatLevel(game);
   const gap = clamp(1350 - t * 55, 430, 1350);
@@ -12274,7 +12445,8 @@ function incCaravan(game, t) {
     expires: game.tick + 1400,
     trader: generateNPC(rng, { faction, tier: Math.round(t) }),
   };
-  game.log(`A caravan from ${name} arrives to trade.`, 'good');
+  game.root.metCaravan = true;
+  game.log(`A caravan from ${name} arrives to trade. Sell spare goods for gold in World › Market.`, 'good');
   fillOrders(game);
 }
 
@@ -12616,6 +12788,7 @@ function tradeSell(game, res, qty) {
   game.resources[res] -= qty;
   addResource(game, 'gold', value);
   game.log(`Sold ${qty} ${RESOURCES[res].name} for ${value} gold.`, 'info');
+  game.root.stats.sold = (game.root.stats.sold || 0) + 1;
   gainStanding(game, value * 0.05);
   return true;
 }
@@ -12671,6 +12844,7 @@ function buyLivestock(game, count = 1) {
 // Everything random here draws from forks of game.rng keyed by day and shop,
 // so buying something never changes what happens elsewhere in a seed.
 // ============================================================================
+
 
 
 
@@ -13316,12 +13490,52 @@ function payDaily(root) {
 
 // --- journeys: parties that walk to a settlement and back ------------------------------------
 const ERRANDS = {
+  // Settlements: places to spend gold.
   trade:   { name: 'Trade',   desc: 'Buy what the settlement makes, at its own prices.' },
   recruit: { name: 'Recruit', desc: 'Buy out a volunteer’s contract. They come back with the party.' },
   heal:    { name: 'Healing', desc: 'The temple there mends wounds nobody here can: permanent injuries.' },
   tribute: { name: 'Tribute', desc: 'Pay for peace: their raiders leave you alone for a season.' },
   fund:    { name: 'Fund walls', desc: 'Pay for their defences. An ally makes the camp stronger.' },
+  // Everywhere else: places to go and get something (docs/progression-roadmap.md P1-3).
+  gather:  { name: 'Gather',  desc: 'Work the site and carry back what it holds. The first haul from anywhere is doubled.' },
+  search:  { name: 'Search',  desc: 'Go through the old place once. It may be guarded: relics, gold, sometimes a Class Tome.' },
+  pilgrim: { name: 'Pilgrimage', desc: 'Pray at the shrine. The whole camp takes heart for a while.' },
+  survey:  { name: 'Survey',  desc: 'Climb it and look around: insight, and the land around it charted.' },
+  clear:   { name: 'Clear',   desc: 'Break the camp or lair. A bounty in gold, and no more raids from it. Send your strongest.' },
 };
+/** Which errand a site offers a party, if any, beyond the settlement ones. */
+function siteErrand(site) {
+  const K = SITE_KINDS[site.kind] || {};
+  if (K.node) return (site.reserve || 0) > 0 ? 'gather' : null;
+  if (K.delve) return site.searched ? null : 'search';
+  if (K.shrine) return 'pilgrim';
+  if (K.landmark) return site.surveyed ? null : 'survey';
+  if (K.hostileSite) return site.cleared ? null : 'clear';
+  return null;
+}
+/** What a site's errand would bring home, for the card that offers it. */
+function siteRewardPreview(root, site, n = 2) {
+  const e = siteErrand(site);
+  if (!e) return null;
+  const K = SITE_KINDS[site.kind];
+  if (e === 'gather') return { errand: e, res: { [K.node]: gatherAmount(site, n) }, first: !site.gathered };
+  if (e === 'search') return { errand: e, text: 'relics, gold, maybe a Class Tome', risk: 0.25 + site.tier * 0.05 };
+  if (e === 'pilgrim') return { errand: e, text: 'the whole camp in better spirits', ready: !(site.pilgrimDay > root.day - 10) };
+  if (e === 'survey') return { errand: e, text: `${60 + site.tier * 20} insight, and nearby sites charted` };
+  if (e === 'clear') return { errand: e, res: { gold: clearBounty(site) }, text: 'and no more raids from it', risk: 0.5 };
+  return null;
+}
+function gatherAmount(site, n) {
+  const per = Math.round(18 * (site.richness || 1));
+  return Math.max(1, Math.min(site.reserve || 0, per * Math.max(1, n) * (site.gathered ? 1 : 2)));
+}
+function clearBounty(site) { return 40 + (site.tier || 1) * 25; }
+/** A hostile site's odds against this party: power over the site's strength. */
+function clearOdds(party, site) {
+  const pw = party.reduce((s, c) => s + powerOfLite(c), 0);
+  return clamp(pw / ((site.strength || 8) * 9), 0.1, 0.95);
+}
+function powerOfLite(c) { return c.combat && c.combat.power ? c.combat.power : 10 + c.level * 3; }
 function journeyDays(game, site) {
   const ow = game.root.overworld;
   const ticks = ow ? ow.travelTicks(ow.colony, site) : TICKS_PER_DAY;
@@ -13347,8 +13561,12 @@ function sendJourney(game, ids, siteId, errand, goods = null) {
   if (!ERRANDS[errand]) return 'No such errand.';
   const party = ids.map(id => root.colonists.find(c => c.id === id && !c.dead && !c.away && !(c.mapId || 0))).filter(Boolean);
   if (!party.length) return 'Choose who goes.';
-  if ((site.hostility ?? 50) >= 75 && errand !== 'tribute') return `${site.name} won’t deal with you.`;
-  let cost = errandCost(root, site, errand, ids);
+  const settle = SITE_KINDS[site.kind] && SITE_KINDS[site.kind].trade;
+  if (settle && (site.hostility ?? 50) >= 75 && errand !== 'tribute') return `${site.name} won’t deal with you.`;
+  if (!settle && errand !== siteErrand(site)) return `Nothing to ${ERRANDS[errand].name.toLowerCase()} at ${site.name}.`;
+  if (errand === 'pilgrim' && site.pilgrimDay > root.day - 10) return `The pilgrims were at ${site.name} lately. Wait ${site.pilgrimDay + 10 - root.day} days.`;
+  if ((root.journeys || []).some(j => j.site === site.id && !settle)) return `Someone is already on the way to ${site.name}.`;
+  let cost = settle ? errandCost(root, site, errand, ids) : 0;
   if (errand === 'trade') {
     cost = 0;
     if (!site.stock && ow.rollStock) site.stock = ow.rollStock(rngFor(root, 'site' + site.id), site);
@@ -13363,6 +13581,7 @@ function sendJourney(game, ids, siteId, errand, goods = null) {
   const days = journeyDays(root, site);
   for (const c of party) { c.away = true; c.task = null; c.order = null; c.path = null; }
   (root.journeys || (root.journeys = [])).push({ ids: party.map(c => c.id), site: site.id, errand, goods, back: root.tick + days * TICKS_PER_DAY, paid: cost });
+  root.stats.journeys = (root.stats.journeys || 0) + 1;
   root.log(`${party.map(c => c.name.short).join(', ')} set out for ${site.name} (${ERRANDS[errand].name.toLowerCase()}), back in ${days} day${days === 1 ? '' : 's'}.`, 'info');
   return '';
 }
@@ -13403,9 +13622,74 @@ function tickJourneys(root) {
       site.hostility = clamp((site.hostility || 50) - 20, 0, 100);
       what = `— ${site.name} is an ally now`;
     }
+    else if (site && ['gather', 'search', 'pilgrim', 'survey', 'clear'].includes(j.errand)) what = resolveSiteErrand(root, site, j, party, rng);
     if (site) site.standing = (site.standing || 0) + j.paid * 0.08;
     root.log(`${party.map(c => c.name.short).join(', ')} come${party.length === 1 ? 's' : ''} back from ${site ? site.name : 'the road'} ${what}.`, 'good');
   }
+}
+
+/** A party is home from a non-settlement site: what they found, as the log's tail. */
+function resolveSiteErrand(root, site, j, party, rng) {
+  const hurt = (p) => { for (const c of party) if (rng.chance(p)) c.hp = Math.max(1, Math.round(c.hp * rng.float(0.35, 0.7))); };
+  if (j.errand === 'gather') {
+    const res = SITE_KINDS[site.kind].node;
+    const q = gatherAmount(site, party.length);
+    site.reserve = Math.max(0, (site.reserve || 0) - q);
+    site.gathered = (site.gathered || 0) + 1;
+    addResource(root, res, q);
+    return `with ${q} ${RESOURCES[res].name.toLowerCase()}${site.reserve ? '' : ' — the site is worked out'}`;
+  }
+  if (j.errand === 'search') {
+    site.searched = true;
+    if (rng.chance(0.25 + site.tier * 0.05)) hurt(0.5);
+    const got = [];
+    const gold = rng.int(15, 35) * (site.tier || 1);
+    addResource(root, 'gold', gold); got.push(`${gold} gold`);
+    const relics = rng.int(1, 2 + Math.floor((site.tier || 1) / 3));
+    addResource(root, 'relics', relics); got.push(`${relics} relic${relics > 1 ? 's' : ''}`);
+    if (rng.chance(0.3)) { root.reagents.class_tome = (root.reagents.class_tome || 0) + 1; got.push('a Class Tome'); }
+    else if (rng.chance(0.6)) { const it = generateItem(rng, { tier: clamp((site.tier || 1) + 1, 1, 10), slot: rng.pick(['weapon', 'armor', 'head', 'feet', 'charm']) }); root.armory.push(it); got.push(it.name); }
+    return `with ${got.join(', ')}`;
+  }
+  if (j.errand === 'pilgrim') {
+    site.pilgrimDay = root.day;
+    for (const c of root.colonists) if (!c.dead) addThought(c, 'relic_awe');
+    return 'and stories that lift the whole camp';
+  }
+  if (j.errand === 'survey') {
+    site.surveyed = true;
+    root.pendingInsight += 60 + site.tier * 20;
+    const found = root.overworld.reveal(site.x, site.y, 12);
+    return `with ${60 + site.tier * 20} insight${found.length ? ` and ${found.length} new site${found.length > 1 ? 's' : ''} charted` : ''}`;
+  }
+  if (j.errand === 'clear') {
+    if (rng.chance(clearOdds(party, site))) {
+      site.cleared = true; site.hostility = 0;
+      const b = clearBounty(site);
+      addResource(root, 'gold', b);
+      hurt(0.3);
+      return `victorious: ${site.name} is broken, and its hoard pays ${b} gold`;
+    }
+    hurt(0.8);
+    return `beaten back from ${site.name}, bloodied`;
+  }
+  return '';
+}
+
+// --- packs: leather turned into loot-carrying room ------------------------------------------
+const PACK_STEP = 30, PACK_MAX = 3;
+function packUpgradeCost(npc) { const lv = Math.round((npc.packUpgrade || 0) / PACK_STEP); return { leather: 12 + lv * 10, cloth: 4 + lv * 3 }; }
+/** Stitch a bigger pack for a delver: more loot carried out of the Rift per trip. */
+function upgradePack(game, id) {
+  const root = game.root, c = root.colonists.find(x => x.id === id && !x.dead);
+  if (!c) return 'No such colonist.';
+  if ((c.packUpgrade || 0) >= PACK_STEP * PACK_MAX) return 'That pack is as big as a back can carry.';
+  const cost = packUpgradeCost(c);
+  for (const [k, v] of Object.entries(cost)) if ((root.resources[k] || 0) < v) return `Needs ${v} ${RESOURCES[k].name.toLowerCase()}.`;
+  for (const [k, v] of Object.entries(cost)) root.resources[k] -= v;
+  c.packUpgrade = (c.packUpgrade || 0) + PACK_STEP;
+  root.log(`${c.name.short}'s pack is stitched bigger: +${PACK_STEP} carrying room.`, 'good', c.id);
+  return '';
 }
 
 // --- Rift merchants (placed on floors by floors.js) ------------------------------------------
@@ -13526,7 +13810,12 @@ function robMerchant(v, r) {
 function economyDawn(game) {
   const root = game.root;
   const L = ledger(root);
-  L.days.push({ day: root.day - 1, spent: L.today });
+  // Net gold over the day, from the treasury itself: sales, loot and veins
+  // arrive by many roads that don't all pass through earn(), but they all
+  // land in resources.gold.
+  const gold = Math.round(root.resources.gold || 0);
+  L.days.push({ day: root.day - 1, spent: L.today, net: L.goldAtDawn != null ? gold - L.goldAtDawn : null });
+  L.goldAtDawn = gold;
   if (L.days.length > 14) L.days.shift();
   L.today = {};
   payDaily(root);
@@ -14203,6 +14492,15 @@ function lairReward(v, boss) {
   if (l.items.length < 2) v.armory.push(...rollLoot(rng, { loot: B.loot }, tier + 1, 4).items.slice(0, 2 - l.items.length));
   v.rift.quietNights = 2;
   v.log(`F${m.depth}: the lair is broken. Its hoard spills out, and the Rift reels — no wave for two nights.`, 'major');
+  // The first lair always yields a Class Tome: breaking the Rift is how a camp
+  // turns its peasants into heroes, so the first win should say so.
+  const root = v.root || v;
+  root.stats.lairs = (root.stats.lairs || 0) + 1;
+  if (root.stats.lairs === 1) {
+    root.reagents.class_tome = (root.reagents.class_tome || 0) + 1;
+    v.log('Among the hoard: a Class Tome. Anyone who reads it can become a new class.', 'good');
+  }
+  root.lastLair = { tick: root.tick, depth: m.depth, biome: m.biome, loot: { ...l.resources, riftshard: 4 + (m.depth || 1) }, items: l.items.length + 1, tome: root.stats.lairs === 1 };
 }
 
 /** Everyone out of a pack and into the stores — they made it back to camp. */
@@ -14269,7 +14567,7 @@ const CAMP_LAYOUT = [
   ['bed', -2, 4], ['bed', -1, 4], ['bed', 0, 4], ['bed', 1, 4], ['bed', 2, 4],
   ['brazier', -4, 0], ['brazier', 4, 0], ['brazier', 0, -3],
 ];
-const START_UNLOCKED = ['wall', 'door', 'bed', 'table', 'brazier', 'stockpile', 'farm', 'kitchen', 'carpenter', 'library', 'training',
+const START_UNLOCKED = ['wall', 'door', 'bed', 'table', 'brazier', 'stockpile', 'farm', 'kitchen', 'carpenter', 'library',
   'timber_wall', 'rug', 'bedroll', 'campfire', 'torch', 'planter', 'bench', 'game_table', 'shelf', 'shed', 'well', 'scarecrow', 'stakes'];
 
 // --- telemetry --------------------------------------------------------------
@@ -14354,7 +14652,9 @@ class Game {
     Object.assign(this.resources, { wood: 160, stone: 140, food: 90, cloth: 24, leather: 12, iron: 24, gold: 40, herbs: 10, meal: 12, ...(opts.resources || {}) });
 
     this.armory = [];
-    this.reagents = {};   // essences and rare finds: the magic economy's raw stuff
+    // Essences and rare finds: the magic economy's raw stuff. The camp starts
+    // with one Class Tome so a peasant can become a hero before any school stands.
+    this.reagents = { class_tome: 1 };
     this.potions = {};    // brewed potions beyond minor healing (which is resources.potion)
     this.library = { scrolls: {}, books: {} };   // single-use scrolls and teachable spellbooks
     this.spellParts = { forms: [...STARTING_PARTS.forms], elements: [...STARTING_PARTS.elements], mods: [...STARTING_PARTS.mods] };
@@ -15049,6 +15349,10 @@ class Game {
           if (this.autoSkills) autoAllocate(c, this.rng.fork('grad' + c.id));
           refresh(c);
           addThought(c, wasAdventurer ? 'starting_over' : 'graduated');
+          // A graduate is no longer a peasant: they keep adventurer's hours and
+          // answer to their class's name.
+          if (c.peasant) { c.peasant = false; c.title = null; }
+          this.stats.graduates = (this.stats.graduates || 0) + 1;
           this.log(`${c.name.short} is now a ${CLASSES[t.klass].name}!`, 'major', c.id);
           c.training = null;
         }
@@ -15387,7 +15691,7 @@ for (const k of MAP_LOCAL) {
 
 
 
-const RESEARCH_ORDER = ['masonry', 'husbandry', 'agriculture', 'letters', 'smelting', 'commerce', 'ranching', 'logistics', 'arcana1', 'herbalism', 'grand_works', 'cartography', 'drill_corps', 'coinage', 'stockbreed', 'drilling', 'devotion', 'wardstone', 'deepmaps', 'relicry'];
+const RESEARCH_ORDER = ['militia', 'masonry', 'husbandry', 'agriculture', 'letters', 'smelting', 'commerce', 'ranching', 'logistics', 'arcana1', 'herbalism', 'grand_works', 'cartography', 'drill_corps', 'coinage', 'stockbreed', 'drilling', 'devotion', 'wardstone', 'deepmaps', 'relicry'];
 
 // Target counts of each building, as a function of population.
 function wants(game) {
@@ -15411,8 +15715,9 @@ function wants(game) {
     ['smithy', game.unlocked.has('smithy') ? 1 : 0],
     ['alchemy', game.unlocked.has('alchemy') ? 1 : 0],
     ['infirmary', game.unlocked.has('infirmary') ? 1 : 0],
-    ['training', 1],
+    ['training', game.unlocked.has('training') ? 1 : 0],
     ['watchpost', game.unlocked.has('watchpost') ? 2 : 0],
+    ['combat_school', game.unlocked.has('combat_school') ? 1 : 0],
     ['shrine', game.unlocked.has('shrine') ? 1 : 0],
     ['reliquary', game.unlocked.has('reliquary') ? 1 : 0],
     ['armory', game.unlocked.has('armory') ? 1 : 0],
@@ -15486,6 +15791,19 @@ function autoplayStep(game, opts = {}) {
       if (game.research.done.has(id)) continue;
       if (!RESEARCH[id].req.every(q => game.research.done.has(q))) continue;
       game.setResearch(id); break;
+    }
+  }
+
+  // --- classes: one student at a time; peasants go first, two stay to labour ---
+  if (!game.colonists.some(c => c.training)) {
+    const peasants = game.colonists.filter(c => c.peasant && !c.dead && !c.away);
+    const tome = (game.reagents.class_tome || 0) > 0;
+    if (peasants.length > 2) for (const c of peasants) {
+      const k = Object.keys(CLASS_INFO).find(k => !classRequirement(c, k) && game.hasSchool(CLASS_INFO[k].school))
+        || (tome && Object.keys(CLASS_INFO).find(k => !classRequirement(c, k)));
+      if (!k) continue;
+      if (game.hasSchool(CLASS_INFO[k].school)) game.enroll(c.id, k); else game.readTome(c.id, k);
+      break;
     }
   }
 
@@ -15802,7 +16120,9 @@ function autoSpend(game) {
   // Healing draughts on the shelf.
   if (S.apothecary && S.apothecary.potions) {
     for (const id of ['greater_healing', 'minor_healing', 'antidote']) {
-      while (game.potionCount(id) < 3 && S.apothecary.potions[id] > 0 && gold() > potionPrice(id) + reserve) buyPotion(game, S.apothecary, id);
+      // A refusal (the counter is shut while its keeper is away) changes
+      // nothing the loop tests, so stop at the first one or spin forever.
+      while (game.potionCount(id) < 3 && S.apothecary.potions[id] > 0 && gold() > potionPrice(id) + reserve) if (buyPotion(game, S.apothecary, id)) break;
     }
   }
   // Grow a building: workshops that feed research and gear first, then the shops.
@@ -15997,6 +16317,7 @@ function saveSummary(game, extra = {}) {
 // are diamonds — shape carries identity at any zoom, emoji ride on top once the
 // tiles are big enough to hold them.
 // ============================================================================
+
 
 
 
@@ -19371,6 +19692,13 @@ function drawOverworld(canvas, game, opts = {}) {
       ctx.fillStyle = K.color;
       ctx.fillText(K.glyph, gx, gy);
     }
+    // A gold "!" where a party could go and come back with something.
+    if (siteErrand(s) && !(s.kind === 'shrine' && s.pilgrimDay > game.day - 10)) {
+      const bx = gx + iconSize * 0.45, by = gy - iconSize * 0.45, r = Math.max(4, iconSize * 0.24);
+      ctx.fillStyle = '#eec45c'; ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#1c1605'; ctx.font = `bold ${Math.round(r * 1.6)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('!', bx, by + 0.5);
+    }
     if (opts.selected && opts.selected.id === s.id) {
       ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
       ctx.strokeRect(gx - cell * 1.6, gy - cell * 1.6, cell * 3.2, cell * 3.2);
@@ -19392,6 +19720,217 @@ function overworldHit(canvas, game, px, py) {
 }
 
 
+/* ===== src/keywords.js ===== */
+// ============================================================================
+// KEYWORDS: one look for every named thing a panel mentions.
+//
+// A trait, a resource, a skill, a class or a status reads the same wherever it
+// appears — icon, name, a colour for whether it is good or bad for you, and
+// the same tooltip (data-tip routes through tips.js). Panels call kw() rather
+// than printing names, so the look can't drift apart again (the harness greps
+// for stray TRAITS[..].name in ui.js and tips.js).
+//
+// Pure strings, no DOM: it loads in Node as well as the browser.
+// ============================================================================
+
+
+
+// How much of each modifier makes one "unit" of good (or bad, when negative).
+// Hostility, needs, fleeing and incidents are costs, so they weigh against.
+const TRAIT_WEIGHT = {
+  mood: 1 / 6, work: 4, combat: 10, social: 3, hostility: -1 / 8, armor: 0.5, needs: -4, loot: 6, luck: 6,
+  learn: 8, move: 4, flee: -2.5, incident: -3, dungeonMood: 1 / 8, trap: 3, nightWork: 3, dayWork: 3,
+};
+const BEAST_WEIGHT = { hp: 4, breed: 2.5, product: 3, power: 2.5, forage: -4, tame: -0.2 };
+
+function score(mods, weights) {
+  let up = 0, down = 0;
+  for (const [k, v] of Object.entries(mods || {})) {
+    const w = k.startsWith('skill.') ? 1 / 3 : weights[k];
+    if (!w) continue;
+    const s = v * w;
+    if (s > 0) up += s; else down -= s;
+  }
+  return { up, down };
+}
+/** 'good', 'bad' or 'mixed': a trait with a real cost and a real gain is a trade-off, not a verdict. */
+function sentimentOf(mods, weights = TRAIT_WEIGHT) {
+  const { up, down } = score(mods, weights);
+  if (up >= 0.6 && down >= 0.6) return 'mixed';
+  if (up - down >= 0.4) return 'good';
+  if (down - up >= 0.4) return 'bad';
+  return 'mixed';
+}
+function traitSentiment(id) { return TRAITS[id] ? sentimentOf(TRAITS[id].mods) : 'mixed'; }
+// Where the arithmetic misreads a trait: a runt eats a little less, but nobody keeps one on purpose.
+const BEAST_VERDICT = { runt: 'bad' };
+function beastTraitSentiment(id) { return BEAST_VERDICT[id] || (BEAST_TRAITS[id] ? sentimentOf(BEAST_TRAITS[id].mods, BEAST_WEIGHT) : 'mixed'); }
+
+const SENT_ICON = { good: '▲', bad: '▼', mixed: '◆' };
+
+function kwEsc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+/**
+ * One keyword chip. type: trait | btrait | res | skill | class | bld.
+ * opts.qty puts an amount in front ("12 🪵 Wood"); opts.short drops the name
+ * (icon and amount only, for dense cost lines); opts.state overrides the colour.
+ */
+function kw(type, id, opts = {}) {
+  let icon = '', name = String(id), sent = 'neutral', tip = '';
+  if (type === 'trait') {
+    const T = TRAITS[id]; if (!T) return '';
+    sent = traitSentiment(id); name = T.name; icon = SENT_ICON[sent]; tip = 'trait:' + id;
+  } else if (type === 'btrait') {
+    const T = BEAST_TRAITS[id]; if (!T) return '';
+    sent = beastTraitSentiment(id); name = T.name; icon = SENT_ICON[sent]; tip = 'btrait:' + id;
+  } else if (type === 'res') {
+    const R = RESOURCES[id]; if (!R) return '';
+    name = R.name; icon = RESOURCE_ICON[id] || ''; tip = 'res:' + id;
+  } else if (type === 'skill') {
+    const S = SKILLS[id]; if (!S) return '';
+    name = S.name;
+  } else if (type === 'class') {
+    const C = CLASSES[id]; if (!C) return '';
+    name = C.name; icon = '🎓';
+  } else if (type === 'bld') {
+    const B = BUILDINGS[id]; if (!B) return '';
+    name = B.name; icon = BUILDING_ICON[id] || '🏠';
+  }
+  if (opts.state) sent = opts.state;
+  const qty = opts.qty != null ? `<b>${opts.qty}</b> ` : '';
+  const label = opts.short ? '' : `<span class="kw-n">${kwEsc(name)}</span>`;
+  const tipAttr = tip && !opts.noTip ? ` data-tip="${tip}"` : opts.tipt ? ` data-tipt="${kwEsc(opts.tipt)}"` : '';
+  return `<span class="kw kw-${type} kw-${sent}"${tipAttr}${opts.short ? ` title="${kwEsc(name)}"` : ''}>${qty}${icon ? `<i>${icon}</i>` : ''}${label}</span>`;
+}
+
+/** A list of keyword chips, or `none` when empty. */
+function kwList(type, ids, none = '') {
+  return ids && ids.length ? ids.map(id => kw(type, id)).join('') : none;
+}
+
+/** A cost or reward line as resource chips: { wood: 12, gold: 5 } → "12 🪵 · 5 🪙". */
+function kwCost(cost, have = null) {
+  return Object.entries(cost || {}).map(([k, v]) =>
+    kw('res', k, { qty: v, short: true, state: have && (have[k] || 0) < v ? 'bad' : undefined })).join('');
+}
+
+
+/* ===== src/tutorial.js ===== */
+// ============================================================================
+// TUTORIAL: ten things to do in the first days, one line each.
+//
+// The steps are actions on the player's own colony, not a separate lesson:
+// each one names a thing to do, points at where to do it, and completes itself
+// when the game sees it done. The "why" only appears once it's done, when the
+// player has a reason to care (docs/tutorial-roadmap.md).
+//
+// Tips are the other half: one line, once per save, the first time something
+// happens that the player hasn't met before.
+//
+// Pure logic on game state — the UI draws it. It never touches game.rng, so a
+// run plays out the same with the tutorial on, off or skipped.
+// ============================================================================
+
+/** Where a step points: a CSS selector the UI rings with a pulse. */
+const TAB = (k) => `.mt[data-drawer="${k}"]`;
+const BUILD_TAB = '.mt[data-act="architect"]';
+
+function countBuilt(game, ids) {
+  const w = game.root.world, seen = new Set();
+  for (const b of w.building) if (b && ids.includes(b.id) && !seen.has(b)) seen.add(b);
+  return seen.size;
+}
+function ownedNodes(game) {
+  return game.root.colonists.reduce((s, c) => s + (c.tree ? c.tree.owned.length : 0), 0);
+}
+const TUTORIAL_STEPS = [
+  { id: 'harvest', icon: '🌿', text: 'Mark trees to cut: press H, then drag over them.', why: 'Wood builds almost everything.',
+    target: BUILD_TAB, done: (g, t) => t.events.harvest },
+  { id: 'beds', icon: '🛏️', text: 'Place a bed for everyone before dusk (Build › Furniture).', why: 'Sleeping on the ground sours the mood. Here are 10 cloth for more.',
+    target: BUILD_TAB, reward: { cloth: 10 },
+    done: (g) => countBuilt(g, ['bed', 'bedroll']) >= g.root.colonists.filter(c => !c.dead).length },
+  { id: 'research', icon: '📚', text: 'Build a Library (Build › Production): research needs one.', why: 'Research unlocks buildings and schools. Try Militia: it opens the Combat School.',
+    target: BUILD_TAB, done: (g, t) => countBuilt(g, ['library', 'archive']) > 0 || t.events['build:library'] || g.research.done.size > 0 },
+  { id: 'class', icon: '🎓', text: 'Make a peasant a hero: People › Classes, read the Class Tome.', why: 'Classes bring a skill tree, abilities and better gear.',
+    target: TAB('people'), drawer: 'classes', done: (g) => g.root.colonists.some(c => c.training) || g.stats.graduates > 0 },
+  { id: 'night', icon: '🌙', text: 'Survive the night. The Rift spawns at dusk; keep fighters home.', why: 'A wave comes every night, and it grows as the Rift deepens.',
+    target: '#threat', done: (g) => g.day >= 2 && g.hour >= 6 },
+  { id: 'delve', icon: '🌀', text: 'Send a party into the Rift: Rift tab › Enter the Rift.', why: 'Delvers carry loot home in their packs. It counts once they walk out.',
+    target: TAB('party'), drawer: 'party', done: (g) => g.stats.expeditions > 0 || g.root.colonists.some(c => c.mapId) },
+  { id: 'lair', icon: '🎯', text: (g) => g.floorCount > 1 ? `Break the lair, now ${g.floorCount} floors down.` : 'Break the lair on floor 1 before the Rift deepens.',
+    why: 'Lairs pay a hoard, gear and two quiet nights.', target: TAB('party'), drawer: 'party', done: (g) => g.stats.lairs > 0 },
+  { id: 'sell', icon: '🐫', text: (g) => g.caravan ? 'Sell spare goods to the caravan: World › Market.' : 'When a caravan comes, sell it your spare goods.',
+    why: 'Selling is where most of a young camp’s gold comes from.', target: TAB('region'), drawer: 'trade', done: (g) => g.stats.sold > 0 },
+  { id: 'skill', icon: '⭐', text: 'Spend a skill point in a hero’s Class tab.', why: 'Every level gives a point. Pick a direction and slot the ability.',
+    target: TAB('people'), drawer: 'classes', start: (g, t) => { t.base = ownedNodes(g); }, done: (g, t) => ownedNodes(g) > (t.base ?? Infinity) },
+  { id: 'world', icon: '🗺️', text: 'Send someone on a journey from the World map.', why: 'The land holds resources, relics and tomes. Sites marked ! pay out.',
+    target: TAB('region'), drawer: 'region', done: (g) => g.stats.journeys > 0 },
+];
+
+/** One-line tips, once per save, the first time each thing happens. */
+const TUTORIAL_TIPS = [
+  { id: 'hungry', when: (g) => g.colonists.some(c => !c.away && c.needs.hunger < 0.3), text: 'Colonists eat meals from a Cookfire. Raw food works, but worse.' },
+  { id: 'mood', when: (g) => g.colonists.some(c => !c.away && c.mood < 30), text: 'Low mood slows work, and below 16 people break. See "On their mind" in their card.' },
+  { id: 'hurt', when: (g) => g.colonists.some(c => c.injuries.length), text: 'Wounds heal faster in a bed, and fastest in an Infirmary.' },
+  { id: 'iron', when: (g) => g.day >= 2 && (g.resources.iron || 0) < 10, text: 'Iron is running out. Mine iron veins, loot a Collapsed Mine, or buy it from a caravan.' },
+  { id: 'goldvein', when: (g) => g.hour >= 8 && g.world.feature.includes('gold'), text: '🪙 There are gold veins nearby. Mine them (M) for coin.' },
+  { id: 'school', when: (g) => ['combat_school', 'mage_school', 'temple'].some(b => g.world.findBuildings(b).length), text: 'A school stands. Enrol peasants from People › Classes.' },
+  { id: 'lv10', when: (g) => g.colonists.some(c => c.tree && c.level >= 10), text: 'A hero reached level 10: a new tier of their skill tree is open.' },
+  { id: 'keeper', when: (g) => g.world.findBuildings().some(r => r.b.done && ['apothecary', 'armory', 'stable', 'trading_post', 'counting_house'].includes(r.b.id) && r.b.keeper == null), text: 'Shops need a keeper at the counter. Click the building to assign one.' },
+  { id: 'dummy', when: (g) => g.world.findBuildings('training').length > 0, text: 'Peasants who drill at the Training Dummy get strong or quick enough for a Combat class.' },
+  { id: 'deepen', when: (g) => g.rift.level >= 2, text: 'The Rift deepened: one more floor, a stronger lair, and bigger waves.' },
+];
+
+/** The tutorial's state lives on the game so it saves with the run. */
+function tutorialState(game) {
+  const root = game.root;
+  if (!root.tutorial) {
+    // A save from before the tutorial existed, well past the first days, starts it skipped.
+    root.tutorial = { step: 0, skipped: root.tick > TICKS_PER_DAY * 2, events: {}, tips: [], started: -1 };
+  }
+  return root.tutorial;
+}
+
+/** Something the player did that a step listens for (a harvest drag, a build). */
+function noteTutorialEvent(game, ev) {
+  const t = tutorialState(game);
+  t.events[ev] = true;
+}
+function currentStep(game) {
+  const t = tutorialState(game);
+  return t.skipped ? null : TUTORIAL_STEPS[t.step] || null;
+}
+function stepText(game, step) { return typeof step.text === 'function' ? step.text(game) : step.text; }
+
+/**
+ * Advance: finish any steps that are done (several can finish at once if the
+ * player got ahead), pay their rewards, and return what just happened so the
+ * UI can say so.
+ */
+function advanceTutorial(game) {
+  const root = game.root, t = tutorialState(game);
+  const completed = [], tips = [];
+  if (!t.skipped) {
+    for (let guard = 0; guard < TUTORIAL_STEPS.length; guard++) {
+      const s = TUTORIAL_STEPS[t.step];
+      if (!s) break;
+      if (t.started !== t.step) { t.started = t.step; if (s.start) s.start(root, t); }
+      if (!s.done(root, t)) break;
+      for (const [k, v] of Object.entries(s.reward || {})) root.resources[k] = (root.resources[k] || 0) + v;
+      completed.push(s);
+      t.step++;
+    }
+  }
+  for (const tip of TUTORIAL_TIPS) {
+    if (t.tips.includes(tip.id)) continue;
+    if (tip.when(root)) { t.tips.push(tip.id); tips.push(tip); }
+  }
+  return { completed, tips, finished: !t.skipped && t.step >= TUTORIAL_STEPS.length && completed.length > 0 };
+}
+function skipTutorialState(game) { tutorialState(game).skipped = true; }
+function restartTutorialState(game) { const t = tutorialState(game); t.skipped = false; t.step = 0; t.started = -1; }
+
+
 /* ===== src/tips.js ===== */
 // ============================================================================
 // HOVER INSPECTORS. Every tooltip in the game is built here from live state,
@@ -19400,6 +19939,7 @@ function overworldHit(canvas, game, px, py) {
 // the map — answers "what is this and how is it doing?" without a click.
 // Presentation only: it reads the game and never changes it.
 // ============================================================================
+
 
 
 
@@ -19442,6 +19982,12 @@ function abilityTip(id) {
   for (const [sid, ch] of a.apply || []) if (STATUSES[sid]) html += tRow(`${STATUSES[sid].icon} ${STATUSES[sid].name}`, `${Math.round(ch * 100)}% chance`);
   return html;
 }
+
+/** One line saying whether a trait helps or hurts, in the keyword colours. */
+function tVerdict(sent) {
+  const t = { good: 'Helps', bad: 'Hurts', mixed: 'A trade-off' }[sent] || '';
+  return t ? `<div class="tt-l kw-${sent}-ink">${t}</div>` : '';
+}
 function tipHtml(g, key) {
   const i = key.indexOf(':');
   const kind = i < 0 ? key : key.slice(0, i);
@@ -19458,8 +20004,8 @@ function tipHtml(g, key) {
       case 'site': return tipSite(g, g.overworld.sites.find(s => String(s.id) === id));
       case 'rift': return tipRift(g);
       case 'stairs': return tipStairs(g, id);
-      case 'trait': return TRAITS[id] ? tHead('', TRAITS[id].name) + tDesc(tEsc(TRAITS[id].desc)) + traitMods(TRAITS[id].mods) : '';
-      case 'btrait': return BEAST_TRAITS[id] ? tHead('', BEAST_TRAITS[id].name) + traitMods(BEAST_TRAITS[id].mods) : '';
+      case 'trait': return TRAITS[id] ? tHead('', TRAITS[id].name) + tVerdict(traitSentiment(id)) + tDesc(tEsc(TRAITS[id].desc)) + traitMods(TRAITS[id].mods) : '';
+      case 'btrait': return BEAST_TRAITS[id] ? tHead('', BEAST_TRAITS[id].name) + tVerdict(beastTraitSentiment(id)) + traitMods(BEAST_TRAITS[id].mods) : '';
       case 'skill': { const [cid, sk] = id.split('|'); return tipSkill(g, g.colonists.find(c => String(c.id) === cid), sk); }
       case 'arm': return tipItem(g.armory[+id]);
       case 'ti': return tipItem(TIP_ITEMS.get(+id));
@@ -19494,8 +20040,9 @@ function tipResource(g, k) {
   if (!R) return '';
   const v = Math.floor(g.resources[k] || 0), cap = g.storageCap;
   let html = tHead(RESOURCE_ICON[k], R.name, `${R.cat} · worth ${PRICES[k] != null ? PRICES[k] + 'g' : '—'} each`);
-  html += tBar('Stored', v / cap, v > cap ? STATUS.warn : R.color, `${v} / ${cap}`);
-  if (v > cap) html += tDesc('Over the storage ceiling — new hauls are being lost. Build a 📦 Stockpile.');
+  if (k === 'gold') html += tRow('Treasury', `${v} — gold has no storage limit`);
+  else html += tBar('Stored', v / cap, v > cap ? STATUS.warn : R.color, `${v} / ${cap}`);
+  if (v > cap && k !== 'gold') html += tDesc('Over the storage ceiling — new hauls are being lost. Build a 📦 Stockpile.');
   if (k === 'food' || k === 'meal') {
     const fd = foodDaysOf(g);
     html += tRow('Food lasts', `${fd >= 99 ? '99+' : fd.toFixed(1)} days`, fd > 6 ? STATUS.good : fd > 2.5 ? STATUS.warn : STATUS.critical);
@@ -19514,8 +20061,24 @@ function tipResource(g, k) {
   const into = [];
   for (const b in BUILDINGS) if (BUILDINGS[b].cost[k] && g.unlocked.has(b)) into.push(`${BUILDING_ICON[b] || '🧱'} ${BUILDINGS[b].name}`);
   for (const r in RECIPES) if (RECIPES[r].inputs[k]) into.push(`⚒️ ${RECIPES[r].name}`);
-  if (from.length) html += tSep + `<div class="tt-l"><em>From</em> ${from.slice(0, 6).join(' · ')}${from.length > 6 ? ' …' : ''}</div>`;
-  if (into.length) html += `<div class="tt-l"><em>Used by</em> ${into.slice(0, 6).join(' · ')}${into.length > 6 ? ' …' : ''}</div>`;
+  // The curated lines lead; a derived one that says the same thing again goes.
+  const merge = (curated, derived) => {
+    const said = curated.join(' ').toLowerCase();
+    return [...new Set([...curated, ...derived.filter(d => !said.includes(d.replace(/^\S+\s/, '').toLowerCase()))])];
+  };
+  from.splice(0, from.length, ...merge(RESOURCE_SOURCES[k] || [], from));
+  into.splice(0, into.length, ...merge(RESOURCE_USES[k] || [], into));
+  const locked = Object.keys(BUILDINGS).filter(b => BUILDINGS[b].cost[k] && !g.unlocked.has(b)).length;
+  if (k === 'gold') {
+    const last = (g.ledger && g.ledger.days || []).filter(d => d.net != null).slice(-3);
+    if (last.length) {
+      const avg = Math.round(last.reduce((a, d) => a + d.net, 0) / last.length);
+      html += tRow('Per day', `${avg >= 0 ? '▲ +' : '▼ '}${avg} (last ${last.length} day${last.length > 1 ? 's' : ''})`, avg >= 0 ? STATUS.good : STATUS.bad);
+    }
+  }
+  if (from.length) html += tSep + `<div class="tt-l"><em>Where from</em> ${from.slice(0, 7).join(' · ')}${from.length > 7 ? ' …' : ''}</div>`;
+  else html += tSep + `<div class="tt-l"><em>Where from</em> —</div>`;
+  if (into.length) html += `<div class="tt-l"><em>What for</em> ${into.slice(0, 7).join(' · ')}${into.length > 7 ? ' …' : ''}${locked ? ` · <span class="dim">+${locked} locked by research</span>` : ''}</div>`;
   return html;
 }
 
@@ -19537,7 +20100,7 @@ function tipColonist(g, c) {
   html += tBar('Joy', c.needs.joy, levelStatus(c.needs.joy), tPct(c.needs.joy));
   const top = SKILL_IDS.map(s => [s, c.skills[s]]).sort((a, b) => b[1] - a[1]).slice(0, 3);
   html += tSep + `<div class="tt-l"><em>Best at</em> ${top.map(([s, v]) => `${SKILLS[s].name} <b>${v}</b>${c.passions[s] === 'burning' ? '🔥' : ''}`).join(' · ')}</div>`;
-  html += `<div class="tt-l"><em>Traits</em> ${c.traits.map(t => TRAITS[t].name).join(', ')}</div>`;
+  html += `<div class="tt-l"><em>Traits</em> ${kwList('trait', c.traits)}</div>`;
   const pets = followersOf(g.root || g, c);
   if (pets.length) html += `<div class="tt-l"><em>Beasts</em> ${pets.map(b => `${ANIMAL_ICON[b.species] || '🐾'} ${tEsc(b.name)}`).join(', ')}</div>`;
   html += `<div class="tt-l"><em>Loyalty</em> <span style="color:${disp.color}">${disp.name}</span>${c.injuries.length ? ` · <em>Injuries</em> ${c.injuries.length}` : ''}</div>`;
@@ -19587,7 +20150,7 @@ function tipBeast(g, b) {
     const best = g.colonists.filter(c => !c.away).sort((x, y) => (y.skills.animals || 0) - (x.skills.animals || 0))[0];
     if (best) html += tRow('Tame chance', `${tPct(tameChance(best, b))} <span class="tt-dim">(${tEsc(best.name.short)})</span>`);
   }
-  if (b.traits.length) html += `<div class="tt-l"><em>Traits</em> ${b.traits.map(t => BEAST_TRAITS[t].name).join(', ')}</div>`;
+  if (b.traits.length) html += `<div class="tt-l"><em>Traits</em> ${kwList('btrait', b.traits)}</div>`;
   html += tDesc(tEsc(A.desc));
   return html;
 }
@@ -19866,6 +20429,9 @@ function tipCrop(g, id) {
 
 
 
+
+
+
 // Things laid in runs by dragging; placing one of these keeps build mode on.
 const LINE_BUILDS = new Set(['wall', 'timber_wall', 'door', 'fence', 'palisade', 'stakes', 'barricade', 'farm', 'field', 'mushroom']);
 
@@ -19952,6 +20518,16 @@ const pct = (v) => Math.round(v * 100) + '%';
 /** A cost as icons and numbers: "🪙 70 · 🪵 20". */
 const costLine = (cost) => Object.entries(cost).filter(([, v]) => v > 0).map(([k, v]) => `${RESOURCE_ICON[k] || ''} ${v}`).join(' · ');
 const hasAllOf = (g, cost) => Object.entries(cost).every(([k, v]) => (g.resources[k] || 0) >= v);
+
+// What a tech is *for*, when that matters more than its flavour name: the
+// class line reads as classes, so the way to a Fighter can be found by eye.
+const SCHOOL_OUTCOME = { combat_school: 'Combat classes', mage_school: 'Mage classes', temple: 'Divine classes',
+  knight_academy: 'Combat prestige', wizardry_academy: 'Mage prestige', cathedral: 'Divine prestige' };
+function techOutcome(id) {
+  const R = RESEARCH[id];
+  const hit = R && R.unlock.find(b => SCHOOL_OUTCOME[b]);
+  return hit ? '🎓 ' + SCHOOL_OUTCOME[hit] : '';
+}
 
 function sectHtml(title, meta = '') {
   return `<div class="sect"><span>${title}</span>${meta !== '' && meta != null ? `<em>${meta}</em>` : ''}</div>`;
@@ -20101,6 +20677,8 @@ class UI {
 
   // ---------------------------------------------------------------- input --
   bind() {
+    // <details> toggles don't bubble; catch them on the way down.
+    document.addEventListener('toggle', (e) => this.noteFold(e.target), true);
     const cv = $('#map');
     this.renderer = new Renderer(cv, this.game);
     this.renderer.resize();
@@ -20287,6 +20865,8 @@ class UI {
         if (!$('#help').classList.contains('hidden')) { this.hide('#help'); return; }
         if (this.tool.mode !== 'select') { this.setTool({ mode: 'select' }); return; }
         if (!$('#buildpick').classList.contains('hidden')) { this.hide('#buildpick'); this.renderRail(); return; }
+        // A panel about a thing (a tile, a site, a foe) goes before the window behind it.
+        if (this.sel && !['colonist', 'squad'].includes(this.sel.kind)) { this.closeInspector(false); return; }
         if (this.drawer) { this.drawer = null; this.renderRail(); this.renderDrawer(); return; }
         if (!$('#options').classList.contains('hidden')) { this.hide('#options'); return; }
         if (!$('#gamemenu').classList.contains('hidden')) { this.hideGameMenu(); return; }
@@ -20308,6 +20888,12 @@ class UI {
         this.renderTop();
       }
       else if (k === 'c') { this.drawer = this.drawer === 'colony' ? null : 'colony'; this.renderRail(); this.renderDrawer(); }
+      else if (k === 'r' || k === 't' || k === 'n') {
+        // Every main tab has a key: Research, the Rift (T), the World (N).
+        const grp = { r: 'research', t: 'party', n: 'region' }[k];
+        this.drawer = UI.groupOf(this.drawer) === grp ? null : (this.lastSub && this.lastSub[grp]) || grp;
+        this.sigs.drawer = null; this.hide('#buildpick'); this.renderRail(); this.renderDrawer();
+      }
       else if (k === '?' || k === '/') this.toggleHelp();
       else if (k === 'arrowleft') this.renderer.camX -= 4;
       else if (k === 'arrowright') this.renderer.camX += 4;
@@ -20391,6 +20977,8 @@ class UI {
     });
     // Alerts act on what they describe: people alerts select those people.
     $('#alerts').addEventListener('click', (e) => {
+      if (e.target.closest('[data-more]')) { this.alertsOpen = !this.alertsOpen; this.sigs.alerts = null; this.renderAlerts(); return; }
+      if (e.target.closest('[data-tut-skip]')) { this.skipTutorial(); return; }
       const b = e.target.closest('.al'); if (!b) return;
       const a = (this.alertList || [])[+b.dataset.i];
       if (!a) return;
@@ -20641,6 +21229,7 @@ class UI {
     // Placing a building ends build mode. Walls, fences and the like are drawn
     // in runs, so those keep the tool until Esc.
     if (n && t.mode === 'build' && !LINE_BUILDS.has(t.id)) { this.setTool({ mode: 'select' }); this.hide('#buildpick'); }
+    if (n) noteTutorialEvent(this.game, t.mode === 'build' ? 'build:' + t.id : t.mode);
     else this.flash(`Nothing there to ${t.mode === 'build' ? 'build on' : t.mode === 'floor' ? 'lay a floor on' : t.mode}`, 'warn');
     return n;
   }
@@ -20757,6 +21346,7 @@ class UI {
     });
     this.ctxOpts = opts;
     box.classList.remove('hidden');
+    if (typeof innerWidth !== 'number') return;   // headless: no viewport to place it in
     const mx = (this.mouse && this.mouse.x) || innerWidth / 2, my = (this.mouse && this.mouse.y) || innerHeight / 2;
     const r = box.getBoundingClientRect();
     box.style.left = `${Math.min(mx + 4, innerWidth - r.width - 8)}px`;
@@ -20915,12 +21505,42 @@ class UI {
       if (r) this.sel = { kind: 'enemy', ref: r };
       else if (b) this.sel = { kind: 'beast', id: b.id, ref: b };
       else if (g._m.kind === 'camp' && this.onGate(x, y)) { this.drawer = 'party'; this.sigs.drawer = null; this.hide('#buildpick'); this.renderRail(); this.renderDrawer(); return; }
-      else if (g.world.inside(x, y)) this.sel = { kind: 'tile', x, y };
-      else this.sel = null;
+      else if (g.world.inside(x, y) && this.tileWorthInspecting(x, y)) this.sel = { kind: 'tile', x, y };
+      else {
+        // Bare ground has nothing to read or order: a click there dismisses
+        // whatever was open instead of opening a panel about grass.
+        this.closeInspector(false);
+        return;
+      }
     }
     this.renderer.selection = this.sel;
     this.sigs.insp = null;
     this.renderInspector();
+  }
+  /**
+   * A "Details ▾" fold: panels lead with what matters and tuck reference data
+   * away. Open/closed is remembered per key, so a reader who wants the numbers
+   * only opens it once.
+   */
+  fold(key, label, html) {
+    if (!this.folds) { try { this.folds = JSON.parse(storeGet('riftgate.folds') || '{}'); } catch (e) { this.folds = {}; } }
+    return `<details class="fold" data-fold="${key}"${this.folds[key] ? ' open' : ''}><summary>${label}</summary>${html}</details>`;
+  }
+  noteFold(d) {
+    if (!d || !d.dataset || !d.dataset.fold) return;
+    if (!this.folds) this.folds = {};
+    this.folds[d.dataset.fold] = d.open;
+    storeSet('riftgate.folds', JSON.stringify(this.folds));
+  }
+  /** Does this tile hold anything a panel could say or order? Plain ground doesn't. */
+  tileWorthInspecting(x, y) {
+    const w = this.mv.world, i = w.idx(x, y);
+    if (w.building[i] || w.feature[i] || w.designation[i]) return true;
+    if (w.floor && w.floor[i]) return true;
+    if (TERRAIN[w.terrain[i]].mineable) return true;
+    if (w.isRift && w.isRift(x, y)) return true;
+    for (const s of [w.stairsUp, w.stairsDown, w.lair]) if (s && s.x === x && s.y === y) return true;
+    return (this.mv.ground || []).some(p => p.x === x && p.y === y);
   }
   closeInspector(dropSquad = true) {
     this.sel = null;
@@ -21101,10 +21721,71 @@ class UI {
         this.renderInspector(); this.renderDrawer(); this.renderRail();
       }
       this.tickTips(now);
+      this.checkMoments();
       if (g.gameOver) this.showGameOver();
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
+  }
+
+  /** The tutorial tracker: pinned above the alerts, a step's words and a row of pips. */
+  tutorialCardHtml(a, i) {
+    const t = tutorialState(this.game);
+    const pips = TUTORIAL_STEPS.map((s, k) => `<i class="${k < t.step ? 'on' : k === t.step ? 'now' : ''}"></i>`).join('');
+    return `<div class="al tut" data-i="${i}" title="${a.drawer ? 'Click to open' : ''}">
+      <span class="ai">${a.icon}</span><div class="tut-b"><div class="tut-h"><span>Getting started · ${t.step + 1}/${TUTORIAL_STEPS.length}</span><button data-tut-skip="1" title="Skip the tutorial (replay it from the ? help)">Skip</button></div>
+      <div class="at">${esc(a.text)}</div><div class="tut-p">${pips}</div></div></div>`;
+  }
+  skipTutorial() {
+    skipTutorialState(this.game); this.sigs.alerts = null; this.renderAlerts(); this.pulseTarget(null);
+    this.flash('Tutorial skipped. Replay it any time from the ? help.', 'info');
+  }
+  /** Ring the thing a tutorial step is about; one ring at a time. */
+  pulseTarget(sel) {
+    if (this.pulseSel === sel) return;
+    for (const e of document.querySelectorAll('.tut-pulse')) e.classList.remove('tut-pulse');
+    this.pulseSel = sel;
+    if (sel) { const e = document.querySelector(sel); if (e) e.classList.add('tut-pulse'); }
+  }
+
+  /** Big moments get a card of their own, not just a log line. */
+  checkMoments() {
+    const g = this.game;
+    const now = performance.now();
+    if (now - (this.lastTut || 0) > 500) {
+      this.lastTut = now;
+      const r = advanceTutorial(g);
+      for (const s of r.completed) this.toast(`✓ ${s.why}`, 'good');
+      for (const tip of r.tips) this.toast(`💡 ${tip.text}`, 'info');
+      if (r.finished) this.toast('🎉 That’s the basics. The rest is yours to find.', 'good');
+      if (r.completed.length) this.sigs.alerts = null;
+      const step = currentStep(g);
+      this.pulseTarget(step && !(step.drawer && this.drawer === step.drawer) ? step.target : null);
+    }
+    const L = g.lastLair;
+    if (L && L.tick !== this.seenLairTick) {
+      this.seenLairTick = L.tick;
+      if (L.tick < g.tick - TICKS_PER_DAY / 4) return;   // an old one from a loaded save
+      const m = $('#modal');
+      m.innerHTML = `<div class="mbox lair-win">
+        <div class="lw-ic">🏆</div>
+        <h2>The lair on floor ${L.depth} is broken</h2>
+        <div class="mini">Its hoard lies where the boss fell. Your delvers carry it home: loot counts once it's walked out of the Rift.</div>
+        <div class="goal-rw">${Object.entries(L.loot).filter(([, q]) => q > 0).map(([k, q]) => kw('res', k, { qty: Math.round(q) })).join('')}
+          <span class="kw kw-good"><i>⚔️</i>${L.items} piece${L.items === 1 ? '' : 's'} of gear to the stash</span>
+          <span class="kw kw-good"><i>🌙</i>No wave for 2 nights</span>
+          ${L.tome ? '<span class="kw kw-good"><i>📕</i>A Class Tome — turn a peasant into a hero</span>' : ''}</div>
+        <div class="mini">The Rift deepens every ${RIFT_DAYS_PER_LEVEL} days, and a new lair waits at the new bottom.</div>
+        <div class="ct-row" style="justify-content:flex-end;margin-top:12px">
+          ${L.tome ? '<button class="act" data-lw="classes">🎓 Choose who reads it</button>' : ''}<button class="act primary" data-lw="close">Onward</button></div></div>`;
+      this.show('#modal');
+      m.onclick = (e) => {
+        const b = e.target.closest && e.target.closest('[data-lw]');
+        if (e.target.id !== 'modal' && !b) return;
+        this.hide('#modal'); m.onclick = null;
+        if (b && b.dataset.lw === 'classes') this.openDrawer('classes');
+      };
+    }
   }
 
   // ------------------------------------------------------------- top bar --
@@ -21128,17 +21809,24 @@ class UI {
     // Top-left resource readout: icon, count, and a sliver of fill against the
     // storage ceiling — the ceiling is what silently throws hauls away.
     const cap = g.storageCap;
-    const keys = ['food', 'meal', 'wood', 'stone', 'iron', 'cloth', 'leather', 'herbs', 'gold', 'gems', 'dust', 'relics', 'gear', 'potion'];
-    const sig = keys.map(k => Math.floor(g.resources[k] || 0)).join(',') + '|' + cap;
+    // Gold leads: it's the resource with the least obvious source, so it
+    // carries its own trend — the net of the last day at the treasury.
+    const keys = ['gold', 'food', 'meal', 'wood', 'stone', 'iron', 'cloth', 'leather', 'herbs', 'gems', 'dust', 'relics', 'gear', 'potion'];
+    const lastDay = ((g.ledger && g.ledger.days) || []).filter(d => d.net != null).slice(-1)[0];
+    const sig = keys.map(k => Math.floor(g.resources[k] || 0)).join(',') + '|' + cap + '|' + (lastDay ? lastDay.net : '');
     if (this.sigs.res !== sig) {
       this.sigs.res = sig;
       const fd = this.foodDays();
-      $('#res').innerHTML = keys.filter(k => ['food', 'meal', 'wood', 'stone'].includes(k) || (g.resources[k] || 0) >= 1).map((k, i) => {
+      $('#res').innerHTML = keys.filter(k => ['gold', 'food', 'meal', 'wood', 'stone'].includes(k) || (g.resources[k] || 0) >= 1).map((k, i) => {
         const v = Math.floor(g.resources[k] || 0);
         const frac = Math.max(0, Math.min(1, v / cap));
         const low = (k === 'food' && fd < 2.5) || (k === 'meal' && v < 4);
         const full = v > cap;
-        return `<div class="rr${low ? ' low' : ''}${full ? ' full' : ''}${k === 'wood' ? ' sep' : ''}" data-tip="res:${k}">
+        if (k === 'gold') {
+          const n = lastDay ? lastDay.net : null;
+          return `<div class="rr gold-rr" data-tip="res:gold"><span class="ci">${RESOURCE_ICON.gold}</span><i>${v}</i>${n != null ? `<em class="${n >= 0 ? 'up' : 'dn'}">${n >= 0 ? '+' : ''}${n}/d</em>` : '<em></em>'}</div>`;
+        }
+        return `<div class="rr${low ? ' low' : ''}${full ? ' full' : ''}${k === 'food' ? ' sep' : ''}" data-tip="res:${k}">
           <span class="ci">${RESOURCE_ICON[k]}</span><i>${v}</i><u><s style="width:${Math.round(frac * 100)}%;background:${RESOURCES[k].color}"></s></u></div>`;
       }).join('');
     }
@@ -21293,7 +21981,9 @@ class UI {
     const idle = home.filter(c => labourOf(c) === 'off' && c.task && c.task.kind === 'wander');
     const fd = this.foodDays();
     const over = ['wood', 'stone', 'food', 'iron'].filter(k => (g.resources[k] || 0) > g.storageCap);
+    const step = this.mapId === 0 ? currentStep(g) : null;
     return [
+      step && { icon: step.icon, text: stepText(g, step), kind: 'tut', drawer: step.drawer, step },
       g.raiders.some(r => r.hp > 0) && { icon: '👹', text: `Rift spawn! ${g.raiders.filter(r => r.hp > 0).length} in the camp`, kind: 'critical' },
       home.some(c => c.tree && pointsFree(c) > 0) && { icon: '⭐', text: `Skill points to spend: ${home.filter(c => c.tree && pointsFree(c) > 0).map(c => c.name.short).join(', ')}`, kind: 'good', targets: ids(home.filter(c => c.tree && pointsFree(c) > 0)), tab: 'class' },
       !g.isNight && g.hoursToDusk <= 3 && { icon: '🌙', text: `Dusk in ${g.hoursToDusk}h — ~${g.waveForecast.size} spawn tonight`, kind: g.hoursToDusk <= 1 ? 'bad' : 'warn', drawer: 'party' },
@@ -21307,23 +21997,32 @@ class UI {
       tired.length && { icon: '😴', text: `Exhausted: ${tired.length}`, kind: 'warn', targets: ids(tired) },
       idle.length > 1 && { icon: '🚶', text: `Idle colonists: ${idle.length}`, kind: 'warn', targets: ids(idle) },
       g.pendingArrivals.length && { icon: '🚪', text: `${g.pendingArrivals.length} waiting at the gate`, kind: 'warn', drawer: 'trade' },
-      g.caravan && { icon: '🐫', text: 'Caravan in town', kind: 'warn', drawer: 'trade' },
+      g.caravan && { icon: '🐫', text: 'Caravan in town — sell spare goods for gold', kind: 'decision', drawer: 'trade' },
       !g.research.current && { icon: '🔬', text: 'Need research project', kind: 'warn', drawer: 'research' },
-      over.length && { icon: '📦', text: `Storage full: ${over.map(k => RESOURCES[k].name).join(', ')}`, kind: 'bad', arch: 'logistics' },
+      over.length && { icon: '📦', text: `Storage full: ${over.map(k => `${RESOURCE_ICON[k] || ''} ${RESOURCES[k].name}`).join(', ')}`, kind: 'bad', arch: 'logistics' },
     ].filter(Boolean);
   }
 
   renderAlerts() {
-    const list = this.alerts();
-    const sig = list.map(a => a.text).join('|');
+    // Worst first, then the decisions that make gold, power or progress, then
+    // the rest. Three show; the others fold under "+N more" so a busy evening
+    // doesn't bury the one thing that matters under nine that don't.
+    const RANK = { tut: -1, critical: 0, decision: 1, bad: 2, good: 3, warn: 4 };
+    const all = this.alerts().map((a, i) => [a, i]).sort((x, y) => (RANK[x[0].kind] ?? 5) - (RANK[y[0].kind] ?? 5) || x[1] - y[1]).map(([a]) => a);
+    const cap = this.alertsOpen ? all.length : 3 + (all[0] && all[0].kind === 'tut' ? 1 : 0);
+    const list = all.slice(0, cap);
+    const more = all.length - list.length;
+    const sig = all.map(a => a.text).join('|') + '|' + cap;
     if (this.sigs.alerts === sig) return;
     this.sigs.alerts = sig;
     this.alertList = list;
     // Icon first, then the words, then a chevron that promises the click does
     // something; the stripe down the left edge is the severity.
-    $('#alerts').innerHTML = list.map((a, i) =>
+    $('#alerts').innerHTML = list.map((a, i) => a.kind === 'tut' ? this.tutorialCardHtml(a, i) :
       `<div class="al ${a.kind}" data-i="${i}" title="${a.targets ? 'Click to select them' : a.drawer ? 'Click to open' : a.arch ? 'Click to build' : ''}">
-        <span class="ai">${a.icon}</span><span class="at">${esc(a.text)}</span><span class="ag">›</span></div>`).join('');
+        <span class="ai">${a.icon}</span><span class="at">${esc(a.text)}</span><span class="ag">›</span></div>`).join('')
+      + (more > 0 ? `<div class="al more" data-more="1"><span class="at">+${more} more</span><span class="ag">▾</span></div>`
+        : this.alertsOpen && all.length > 3 ? '<div class="al more" data-more="1"><span class="at">Show fewer</span><span class="ag">▴</span></div>' : '');
   }
 
   paintToasts() {
@@ -21366,16 +22065,16 @@ class UI {
     ['architect', 'Build', 'Buildings, floors and furniture (B)', '🔨', 'B'],
     ['people', 'People', 'Who does which job, and everyone at a glance (W)', '🧑‍🤝‍🧑', 'W'],
     ['colony', 'Colony', 'How the hold is doing: stocks, fields and animals, the workshop, the chronicle (C)', '🏕️', 'C'],
-    ['research', 'Research', 'The tech tree and the bestiary', '🔬', ''],
-    ['party', 'Rift', 'The delving party. Click the Rift Gate on the map to send them in', '🌀', ''],
-    ['region', 'World', 'The region map, and the caravans that come from it', '🗺️', ''],
+    ['research', 'Research', 'The tech tree and the bestiary (R)', '🔬', 'R'],
+    ['party', 'Rift', 'The Rift: its lair, the floors, and the next party (T)', '🌀', 'T'],
+    ['region', 'World', 'The region map, the market and caravans, and journeys (N)', '🗺️', 'N'],
   ];
   // Six main tabs; related panels are sub-tabs of one window rather than
   // separate tabs of their own. The first entry is the group's key and default.
   // Each sub-tab holds one kind of thing: the market only trades, the workshop
   // only makes, the tree only researches.
   static GROUPS = {
-    people: [['people', 'Duties'], ['roster', 'Roster']],
+    people: [['people', 'Duties'], ['roster', 'Roster'], ['classes', 'Classes']],
     colony: [['colony', 'Overview'], ['farm', 'Fields & Animals'], ['workshop', 'Workshop'], ['log', 'Chronicle']],
     research: [['research', 'Tech tree'], ['bestiary', 'Bestiary']],
     party: [['party', 'Party']],
@@ -21401,18 +22100,37 @@ class UI {
       if (b.dataset.act === 'architect') { b.classList.toggle('on', archOpen); continue; }
       b.classList.toggle('on', !!this.drawer && UI.groupOf(this.drawer) === b.dataset.drawer);
       const k = b.dataset.drawer;
+      const urgent = this.railUrgent(k);
       const count = k === 'region' ? g.pendingArrivals.length + (g.caravan ? 1 : 0)
         : k === 'party' ? g.colonists.filter(c => c.mapId).length
           : k === 'research' ? (g.research.current ? 0 : 1)
-            : 0;
-      // Gold asks for a decision; blue is only news (a party is out).
+            : k === 'people' ? urgent
+              : 0;
+      // A ring says a decision is waiting in there; gold dots count them, blue is only news.
+      b.classList.toggle('urgent', urgent > 0 && UI.groupOf(this.drawer) !== k);
       let dot = b.querySelector('.dot');
       if (count > 0) {
         if (!dot) { dot = el('span', 'dot'); b.appendChild(dot); }
         dot.textContent = k === 'research' ? '!' : count > 9 ? '9+' : String(count);
-        dot.className = 'dot' + (k === 'party' ? ' info' : '');
+        dot.className = 'dot' + (k === 'party' && !urgent ? ' info' : '');
       } else if (dot) dot.remove();
     }
+  }
+
+  /** How many decisions wait behind a main tab — the ones that cost something to ignore. */
+  railUrgent(k) {
+    const g = this.game;
+    if (k === 'people') {
+      const home = g.colonists.filter(c => !c.dead && !c.away);
+      return home.filter(c => (c.tree && pointsFree(c) > 0) || (!c.tree && !c.training && this.classOptions(c).some(o => o.ready))).length;
+    }
+    if (k === 'region') return g.caravan ? 1 : 0;
+    if (k === 'research') return g.research.current ? 0 : 1;
+    if (k === 'party') {
+      const m = g.floorAt(g.floorCount);
+      return g.canEnterRift && !(m && m.lairCleared) && !g.colonists.some(c => c.mapId) && g.hour < 14 ? 1 : 0;
+    }
+    return 0;
   }
 
   toggleHelp() {
@@ -21421,7 +22139,10 @@ class UI {
     h.innerHTML = this.helpHtml();
     this.show('#help');
     const close = () => this.hide('#help');
-    h.onclick = (e) => { if (e.target === h || e.target.dataset.close) close(); };
+    h.onclick = (e) => {
+      if (e.target.dataset && e.target.dataset.tutReplay) { restartTutorialState(this.game); this.sigs.alerts = null; close(); this.flash('Tutorial restarted — see the top of the alerts.', 'good'); return; }
+      if (e.target === h || e.target.dataset.close) close();
+    };
   }
 
   helpHtml() {
@@ -21429,7 +22150,7 @@ class UI {
     const leg = (icon, what) => `<div class="lg"><span class="li">${icon}</span><span>${what}</span></div>`;
     return `<div class="mbox">
       <h2>Controls & legend</h2>
-      <div class="sub">Everything the colony answers to. Press <b>?</b> any time.</div>
+      <div class="sub">Everything the colony answers to. Press <b>?</b> any time. <button class="act" data-tut-replay="1">🧭 Replay the tutorial</button></div>
       <div class="hcols">
         <div>
           <div class="sect">Selecting</div>
@@ -21460,7 +22181,7 @@ class UI {
           ${row('1 – 4', 'Speed')}
           ${row('space', 'Pause')}
           ${row('O', 'Cycle the soil and water overlays')}
-          ${row('W / C', 'People · Colony windows')}
+          ${row('W / C / R / T / N', 'People · Colony · Research · Rift · World windows')}
           ${row('Esc', 'Drop the tool and the selection')}
         </div>
         <div>
@@ -21537,7 +22258,7 @@ class UI {
     const d = $('#drawer');
     if (!this.drawer) { d.classList.add('hidden'); return; }
     d.classList.remove('hidden');
-    d.classList.toggle('wide', ['people', 'roster', 'trade', 'services', 'party', 'farm', 'colony', 'log', 'workshop', 'bestiary'].includes(this.drawer));
+    d.classList.toggle('wide', ['people', 'roster', 'classes', 'trade', 'services', 'party', 'farm', 'colony', 'log', 'workshop', 'bestiary'].includes(this.drawer));
     d.classList.toggle('xwide', ['research', 'region'].includes(this.drawer));
     const body = $('#drawer .body');
     const t = $('#drawer .d-title');
@@ -21577,6 +22298,7 @@ class UI {
     else if (this.drawer === 'workshop') this.drawWorkshopTab(body);
     else if (this.drawer === 'log') this.drawLog(body);
     else if (this.drawer === 'roster') this.drawRoster(body);
+    else if (this.drawer === 'classes') this.drawClasses(body);
     body.scrollTop = scroll;
   }
 
@@ -21588,6 +22310,10 @@ class UI {
     }
     if (this.drawer === 'people') {
       return 'people|' + g.colonists.map(c => `${c.id}${Object.values(c.priorities).join('')}${Math.round(c.mood / 5)}${this.squad.has(c.id) ? 's' : ''}`).join('|') + '|' + g.graveyard.length;
+    }
+    if (this.drawer === 'classes') {
+      return 'classes|' + g.colonists.map(c => `${c.id}${c.klass}${c.level}${c.tree ? pointsFree(c) : ''}${c.training ? Math.floor(c.training.progress / c.training.need * 20) : ''}${c.away ? 'a' : ''}${c.drill || 0}${Object.values(c.attributes).join('')}`).join('|')
+        + `|${g.reagents.class_tome || 0}|${Object.keys(SCHOOLS).map(k => g.hasSchool(k) ? 1 : 0).join('')}|${g.unlocked.size}`;
     }
     if (this.drawer === 'region') {
       // The region map is ~400 sites; only rebuild when what it shows has changed.
@@ -21696,6 +22422,66 @@ class UI {
   }
 
   /** Everyone at a glance: who they are, what they're doing, how they are. */
+  /**
+   * People › Classes: everyone's class at a glance, and one click to send a
+   * peasant to school. The single place the class loop lives, instead of four
+   * clicks deep in each colonist's card.
+   */
+  drawClasses(body) {
+    const g = this.game;
+    this.peopleCard(body);
+    const tomes = g.reagents.class_tome || 0;
+    const schools = Object.entries(SCHOOLS).map(([k, S]) => {
+      const has = g.hasSchool(k), open = g.unlocked.has(S.building);
+      const tech = unlockerOf(S.building);
+      return `<span class="kw kw-${has ? 'good' : 'neutral'}" data-tipt="${esc(has ? `${S.name} built — trains ${Object.keys(CLASS_INFO).filter(c => CLASS_INFO[c].school === k).map(c => CLASSES[c].name).join(', ')}.`
+        : open ? `Unlocked — build a ${S.name} (Build › Martial).` : `Research ${RESEARCH[tech] ? RESEARCH[tech].name : '?'} to unlock the ${S.name}.`)}"><i>${has ? '🏫' : open ? '🔨' : '🔒'}</i>${esc(S.name)}</span>`;
+    }).join('');
+    body.appendChild(el('div', 'cls-intro', `<div class="mini">Peasants work but fight poorly. A <b>class</b> gives them a skill tree, abilities and better gear. Classes are taught at schools, or learned in a day from a 📕 Class Tome.</div>
+      <div class="ct-row">${schools}${tomes ? `<span class="kw kw-good"><i>📕</i><b>${tomes}</b> Class Tome${tomes > 1 ? 's' : ''}</span>` : ''}</div>`));
+    const home = g.colonists.filter(c => !c.dead);
+    const peasants = home.filter(c => !c.tree), heroes = home.filter(c => c.tree);
+    const rowFor = (c) => {
+      let doing;
+      if (c.training) doing = `<span class="badge info">📖 becoming a ${esc(CLASSES[c.training.klass].name)} · ${Math.round(c.training.progress / c.training.need * 100)}%</span>`;
+      else if (c.tree) {
+        const pts = pointsFree(c);
+        doing = `${pts ? `<button class="act primary" data-cls-open="${c.id}">★ ${pts} point${pts > 1 ? 's' : ''} to spend</button>` : '<span class="mini">Skill tree up to date</span>'}`;
+      } else {
+        const ready = this.classOptions(c).filter(o => o.ready);
+        if (ready.length) doing = ready.slice(0, 6).map(o => `<button class="ct-tac ready" data-cls-enroll="${c.id}:${o.k}" data-tipt="${esc(o.how)}">${esc(CLASSES[o.k].name)}${o.via === 'tome' ? ' 📕' : ''}</button>`).join('');
+        else {
+          const dt = drillTarget(c);
+          const anyWay = Object.keys(SCHOOLS).some(k => g.hasSchool(k)) || tomes;
+          doing = `<span class="mini">${dt ? `${dt.attr.toUpperCase()} ${dt.value}/12 for ${esc(CLASSES[dt.klass].name)} — ${g.world.findBuildings('training').length ? 'drilling at the Training Dummy raises it' : 'a Training Dummy would raise it'}.` : ''}${!anyWay ? ' No school or tome yet.' : ''}</span>`;
+        }
+      }
+      return `<div class="rrow cls-row" data-cls-pick="${c.id}">
+        <span class="rpt">${RACE_ICON[c.race] || '🧑'}</span>
+        <div class="rwho"><b>${esc(c.name.short)}</b><span>${esc(c.title || CLASSES[c.klass].name)} · lv ${c.level}${c.away ? ' · in the Rift' : ''}</span></div>
+        <div class="cls-do">${doing}</div></div>`;
+    };
+    body.appendChild(el('div', '', sectHtml('Peasants', `${peasants.length}`)));
+    body.appendChild(el('div', 'roster', peasants.map(rowFor).join('') || '<div class="mini">Everyone has a class.</div>'));
+    body.appendChild(el('div', '', sectHtml('Heroes', `${heroes.length}`)));
+    body.appendChild(el('div', 'roster', heroes.map(rowFor).join('')));
+    body.onclick = (e) => {
+      const en = e.target.closest && e.target.closest('[data-cls-enroll]');
+      const op = e.target.closest && e.target.closest('[data-cls-open]');
+      const pick = e.target.closest && e.target.closest('[data-cls-pick]');
+      if (en) {
+        const [id, k] = en.dataset.clsEnroll.split(':');
+        const r = g.hasSchool(CLASS_INFO[k].school) ? g.enroll(+id, k) : g.readTome(+id, k);
+        if (r) this.toast(r, 'warn'); else this.flash(`Training begins: ${CLASSES[k].name}.`, 'good');
+      } else if (op || pick) {
+        const id = +(op ? op.dataset.clsOpen : pick.dataset.clsPick);
+        this.squad.clear(); this.squad.add(id); this.commitSquad();
+        this.tab = 'class'; this.sigs.insp = null; this.renderInspector();
+      } else return;
+      this.sigs.drawer = null; this.renderDrawer();
+    };
+  }
+
   drawRoster(body) {
     const g = this.game;
     const cs = [...g.colonists].sort((a, b) => (a.away - b.away) || a.name.short.localeCompare(b.name.short));
@@ -21936,7 +22722,7 @@ class UI {
         { label: 'Settlements', value: kindCount(K => K.settle && K !== SITE_KINDS.colony) },
         { label: 'Hostile', value: kindCount(K => K.hostileSite), color: 'var(--bad)' },
         { label: 'Resources', value: kindCount(K => K.node) },
-        { label: 'Landmarks', value: kindCount(K => K.landmark) },
+        { label: 'Worth a trip', value: known.filter(st => siteErrand(st)).length, color: 'var(--hi)', tip: 'Sites marked ! — resources to gather, ruins to search, camps to clear' },
       ],
     }));
     const frame = el('div', 'wd-map');
@@ -21964,6 +22750,7 @@ class UI {
       ['🏘️', 'Settlements', (K) => K.settle && K !== SITE_KINDS.colony],
       ['⚔️', 'Hostile', (K) => K.hostileSite],
       ['🪨', 'Resources', (K) => K.node],
+      ['🏚️', 'Ruins & shrines', (K) => K.delve || K.shrine],
       ['🏰', 'Landmarks', (K) => K.landmark],
     ];
     const cols = el('div', 'wd-groups');
@@ -21976,7 +22763,8 @@ class UI {
         const h = st.hostility != null ? dispositionOf(st.hostility) : null;
         const chip = el('div', 'wd-site' + (this.selSite === st ? ' on' : '') + (st.cleared ? ' cleared' : ''));
         chip.dataset.tip = 'site:' + st.id;
-        chip.innerHTML = `<span class="wd-si">${SITE_ICON[st.kind] || '📍'}</span><span class="wd-sn">${esc(st.name)}</span>
+        const rw = siteErrand(st);
+        chip.innerHTML = `<span class="wd-si">${SITE_ICON[st.kind] || '📍'}</span><span class="wd-sn">${esc(st.name)}${rw ? ' <b class="wd-rw" title="Something to go and get: ' + ERRANDS[rw].name + '">!</b>' : ''}</span>
           ${h ? `<i style="background:${h.color}"></i>` : ''}<span class="wd-sd">${Math.round(st.dist)}</span>`;
         chip.onclick = () => { this.selSite = st; this.sel = { kind: 'site', ref: st }; this.sigs.insp = null; this.renderInspector(); this.renderDrawer(); };
         col.appendChild(chip);
@@ -21984,7 +22772,7 @@ class UI {
       cols.appendChild(col);
     }
     body.appendChild(cols);
-    body.appendChild(el('div', 'hint', 'Traders and wanderers come from these places. Cartography sends scouts out at every dawn. The dot beside a place is how it feels about you.'));
+    body.appendChild(el('div', 'hint', 'Places marked <b class="wd-rw">!</b> have something to go and get: resources to gather, ruins to search, camps to clear. Click one, select who goes on the colonist bar, and send them from its card. Cartography charts more at every dawn.'));
   }
 
   /**
@@ -22095,6 +22883,7 @@ class UI {
     // Read top to bottom as the questions come: what state is the gate in, is
     // anyone inside, who goes next, what waits for them, what comes out tonight.
     this.drawRiftHero(body);
+    this.drawLairGoal(body);
     this.drawRiftParties(body);
     this.drawPartyLayout(body);
     this.drawRiftStatus(body);
@@ -22206,6 +22995,29 @@ class UI {
   }
 
   /** The gate's state in one strip: open or quiet, level, rank. */
+  /**
+   * The Rift's finish line, said plainly: where the lair is today, what
+   * breaking it pays, and how long before it moves a floor deeper.
+   */
+  drawLairGoal(body) {
+    const g = this.game;
+    const depth = g.floorCount, m = g.floorAt(depth);
+    const B = BIOMES_RIFT[g.rift.biome ? g.rift.biome.id : 'goblin_warrens'] || {};
+    const nextIn = g.riftNextLevelIn;
+    const broken = m && m.lairCleared;
+    const loot = Object.entries(B.loot || {}).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => kw('res', k)).join('');
+    const firstTome = !(g.stats.lairs > 0);
+    const carried = {};
+    for (const c of g.colonists) if (!c.dead && c.mapId && c.pack) for (const [k, q] of Object.entries(c.pack)) if (q > 0) carried[k] = (carried[k] || 0) + q;
+    const carriedHtml = Object.keys(carried).length ? Object.entries(carried).map(([k, q]) => kw('res', k, { qty: Math.round(q), short: true })).join('') : '<span class="mini">nothing yet</span>';
+    body.appendChild(el('div', 'goal-card' + (broken ? ' done' : ''), `
+      <div class="goal-h"><span class="goal-ic">${broken ? '🏆' : '🎯'}</span>
+        <div><div class="goal-t">${broken ? `The lair on floor ${depth} is broken` : `Goal: break the lair on floor ${depth}`}</div>
+        <div class="mini">${broken ? 'Come back when the Rift deepens for the next one.' : `The lair boss waits at the bottom of the Rift. ${nextIn > 0 ? `In <b>${nextIn} day${nextIn === 1 ? '' : 's'}</b> the Rift deepens and the lair moves to floor ${depth + 1}.` : ''}`}</div></div></div>
+      <div class="goal-rw"><span class="mini">Reward</span>${loot}<span class="kw kw-good"><i>⚔️</i>2 pieces of gear</span><span class="kw kw-good"><i>💠</i>${4 + depth} Rift shards</span><span class="kw kw-good"><i>🌙</i>2 nights with no wave</span>${firstTome ? '<span class="kw kw-good"><i>📕</i>a Class Tome (first lair)</span>' : ''}</div>
+      <div class="goal-rw"><span class="mini" data-tipt="Loot is what your delvers carry in their packs. It only counts once they walk it back up and out of the Rift.">Loot in packs below</span>${carriedHtml}</div>`));
+  }
+
   drawRiftHero(body) {
     const g = this.game;
     const R = g.rift;
@@ -22423,7 +23235,7 @@ class UI {
       const unlocks = (T.unlock || []).map(u => BUILDING_ICON[u] || '').join('');
       return `<div class="tn tn-${st}" data-tech="${t}" data-tip="tech:${t}" style="left:${pos[t].x}px;top:${pos[t].y}px;width:${W}px;height:${H}px">
         <div class="tn-ic">${TECH_ICON[t] || '🔬'}</div>
-        <div class="tn-bd"><div class="tn-nm">${T.name}</div>
+        <div class="tn-bd"><div class="tn-nm">${T.name}${techOutcome(t) ? `<em class="tn-out">${techOutcome(t)}</em>` : ''}</div>
           <div class="tn-mt"><span>${T.cost}</span><span class="tn-un">${unlocks}${T.bonus ? '⭐' : ''}</span></div>
           <div class="tn-pb"><i style="width:${Math.round(f * 100)}%"></i></div></div>
         ${badge ? `<div class="tn-bg">${badge}</div>` : ''}</div>`;
@@ -22482,7 +23294,7 @@ class UI {
         c.innerHTML = `<div class="tr-vp">${RACE_ICON[n.race] || '🧑'}</div>
           <div class="tr-vb"><b>${esc(n.name.full)}</b>
             <div class="mini">${RACES[n.race].name} ${CLASSES[n.klass].name} · L${n.level} · ⚔️ ${powerOf(n)}</div>
-            <div class="tr-traits">${n.traits.slice(0, 3).map(t => `<span class="tag" data-tip="trait:${t}">${TRAITS[t].name}</span>`).join('')}</div>
+            <div class="tr-traits">${kwList('trait', n.traits.slice(0, 3))}</div>
             ${gauge({ label: 'Disposition', frac: n.hostility / 100, verdict: disp.name, color: disp.color, note: n.hostility > 72 ? 'Might turn on the hold.' : '' })}
             <div class="mini">🕓 waits ${Math.max(0, Math.round((a.expires - g.tick) / 60))}h more${a.fee ? ` · asks 🪙 ${a.fee}` : ' · asks nothing'}</div></div>`;
         const acts = el('div', 'tr-va');
@@ -22578,7 +23390,7 @@ class UI {
     const potionTile = (id, n, price, act) => `<div class="tr-item${gold >= price ? '' : ' no'}" ${act} data-tip="potion:${id}">
         <div class="tr-ic">${POTIONS[id].icon}</div><div class="tr-n">${esc(POTIONS[id].name)}</div><div class="tr-q">${n} on the shelf</div><div class="tr-p">🪙 ${price}</div></div>`;
     const beastTile = (b, act) => { const A = ANIMALS[b.species], price = beastPrice(b); return `<div class="tr-item beast${gold >= price ? '' : ' no'}" ${act} data-tip="species:${b.species}">
-        <div class="tr-ic">${ANIMAL_ICON[b.species] || '🐾'}</div><div class="tr-n">${A.name}</div><div class="tr-q">${b.traits.length ? b.traits.map(t => BEAST_TRAITS[t].name).join(', ') : (b.sex === 'f' ? 'female' : 'male')}</div><div class="tr-p">🪙 ${price}</div></div>`; };
+        <div class="tr-ic">${ANIMAL_ICON[b.species] || '🐾'}</div><div class="tr-n">${A.name}</div><div class="tr-q">${b.traits.length ? kwList('btrait', b.traits) : (b.sex === 'f' ? 'female' : 'male')}</div><div class="tr-p">🪙 ${price}</div></div>`; };
     const mercTile = (n, act) => { const fee = mercFee(n); return `<div class="tr-item merc${gold >= fee ? '' : ' no'}" ${act} data-tipt="${esc(n.name.full)} · ${esc(RACES[n.race].name)} ${esc(CLASSES[n.klass].name)}">
         <div class="tr-ic">${RACE_ICON[n.race] || '🧑'}</div><div class="tr-n">${esc(n.name.short)}</div><div class="tr-q">${CLASSES[n.klass].name} L${n.level} · ⚔️ ${powerOf(n)}</div><div class="tr-p">🪙 ${fee} + ${mercWage(n)}/day</div></div>`; };
 
@@ -22635,7 +23447,7 @@ class UI {
       const spare = g.armory.map((it, i) => [it, i]).sort((a, b) => itemBuyback(b[0]) - itemBuyback(a[0])).slice(0, 8);
       if (spare.length) {
         const sg = grid();
-        sg.innerHTML = spare.map(([it, i]) => `<div class="tr-item sell" data-sell="${i}" data-tip="${itemTipKey(it)}"><div class="tr-ic">${SLOT_ICONS[it.slot] || '⚔️'}</div><div class="tr-n" style="color:${RARITIES[it.rarity].color}">${esc(it.name)}</div><div class="tr-q">from your armory</div><div class="tr-p">+🪙 ${itemBuyback(it)}</div></div>`).join('');
+        sg.innerHTML = spare.map(([it, i]) => `<div class="tr-item sell" data-sell="${i}" data-tip="${itemTipKey(it)}"><div class="tr-ic">${SLOT_ICONS[it.slot] || '⚔️'}</div><div class="tr-n" style="color:${RARITIES[it.rarity].color}">${esc(it.name)}</div><div class="tr-q">from your stash</div><div class="tr-p">+🪙 ${itemBuyback(it)}</div></div>`).join('');
         wrap.appendChild(el('div', 'mini shop-desc', 'Sell what the hold doesn’t use:'));
         wrap.appendChild(sg);
       }
@@ -22779,6 +23591,16 @@ class UI {
       wrap.appendChild(tr);
     }
 
+    // Packs: leather into loot. The bigger a delver's pack, the more comes out of the Rift per trip.
+    wrap.appendChild(sect('🎒 Bigger packs', 'leather and cloth → more loot carried per delve'));
+    const pk = el('div', 'shop-row');
+    pk.innerHTML = g.colonists.filter(c => !c.dead && c.tree).sort((a, b) => b.level - a.level).slice(0, 10).map(c => {
+      const lv = Math.round((c.packUpgrade || 0) / PACK_STEP), cost = packUpgradeCost(c);
+      const can = lv < PACK_MAX && Object.entries(cost).every(([k, v]) => (g.resources[k] || 0) >= v);
+      return `<button class="act" data-pack="${c.id}"${can ? '' : ' disabled'} data-tipt="${esc(`${c.name.short}'s pack holds ${packCap(c)}. ${lv >= PACK_MAX ? 'As big as it gets.' : `+${PACK_STEP} for ${cost.leather} leather and ${cost.cloth} cloth.`}`)}">🎒 ${esc(c.name.short)} ${'●'.repeat(lv)}${'○'.repeat(PACK_MAX - lv)}${lv < PACK_MAX ? ` · ${cost.leather}${RESOURCE_ICON.leather}` : ''}</button>`;
+    }).join('') || '<span class="mini">Heroes carry packs; peasants don\'t delve.</span>';
+    wrap.appendChild(pk);
+
     // Journeys
     const ow = g.overworld;
     const sites = ow ? ow.sites.filter(s => s.discovered && SITE_KINDS[s.kind].trade) : [];
@@ -22831,6 +23653,7 @@ class UI {
       else if (d.bless) r = bless(g, d.bless);
       else if (d.raise) r = raiseDead(g, +d.raise);
       else if (d.train) r = paidTraining(g, +d.train);
+      else if (d.pack) r = upgradePack(g, +d.pack);
       else if (d.journey) {
         const [sid, errand] = d.journey.split(':');
         const ids = (d.ids || '').split(',').filter(Boolean).map(Number);
@@ -22869,7 +23692,7 @@ class UI {
       stats: [
         { label: 'Gear kits', value: Math.floor(g.resources.gear || 0), tip: 'Two forge a piece; one reinforces' },
         { label: 'Potions', value: potions },
-        { label: 'Armory', value: g.armory.length },
+        { label: 'Stash', value: g.armory.length, tip: 'Spare weapons and armour: Rift loot, forged pieces and gear taken off colonists' },
         { label: 'Reagents', value: reagents },
       ],
     }));
@@ -22883,7 +23706,7 @@ class UI {
       ...reag.map(([k, v]) => ESSENCES[k] ? `<span class="ct-chip" data-tipt="${ESSENCES[k].name}\nDropped by monsters of its element. Used for enchanting, spellcraft and ward potions.">${ESSENCES[k].icon} ${ESSENCES[k].name} <b>×${v}</b></span>` : `<span class="ct-chip">📕 ${k === 'class_tome' ? 'Class Tome' : esc(k)} <b>×${v}</b></span>`),
       ...tro.map(([k, v]) => `<span class="ct-chip good" data-tipt="${TROPHIES[k].name}\nA trophy from a named monster. Used in legendary crafting.">${TROPHIES[k].icon} ${TROPHIES[k].name} <b>×${v}</b></span>`),
     ].join('')));
-    body.appendChild(el('div', '', sectHtml('Armory', `${g.armory.length} piece${g.armory.length === 1 ? '' : 's'}`)));
+    body.appendChild(el('div', '', sectHtml('🎒 Stash', `${g.armory.length} piece${g.armory.length === 1 ? '' : 's'}`)));
     if (!g.armory.length) body.appendChild(el('div', 'mini', 'Empty. Loot comes back from delves and beaten raids.'));
     else {
       const ag = el('div', 'tr-arm');
@@ -23007,7 +23830,10 @@ class UI {
 
   setTabs(names) {
     const t = $('#inspector .tabs');
-    const label = { overview: 'Overview', skills: 'Skills', gear: 'Gear', class: 'Class' };
+    const label = { overview: 'Overview', skills: 'Skills', gear: 'Gear', class: '🎓 Class' };
+    // The Class tab lights up when there's a choice waiting in it.
+    const sc = this.sel && this.sel.kind === 'colonist' && this.game.colonists.find(x => x.id === this.sel.id);
+    if (sc && names.includes('class') && ((sc.tree && pointsFree(sc) > 0) || (!sc.training && !sc.tree && this.classOptions(sc).some(o => o.ready)))) label.class = '🎓 Class <i class="tab-dot"></i>';
     t.innerHTML = names.map(n => `<button data-tab="${n}" class="${this.tab === n ? 'on' : ''}">${label[n] || n}</button>`).join('');
     t.style.display = names.length ? '' : 'none';
     t.onclick = (e) => { const b = e.target.closest('button'); if (!b) return; this.tab = b.dataset.tab; this.renderInspector(); };
@@ -23021,16 +23847,43 @@ class UI {
       return `<div class="sect">Training</div><div class="mini">Becoming a <b>${esc(CLASSES[t.klass].name)}</b> — ${pct}%${t.tome ? ' (reading a Class Tome)' : t.teacher ? ' (with an instructor: double pace)' : ' (self-study: find an instructor of level 5+)'}.</div>
         <div class="ct-row"><button class="ct-tac" data-cancel="1">Stop training</button></div>`;
     }
+    const opts = this.classOptions(c);
     const tomes = g.reagents.class_tome || 0;
-    const rows = Object.keys(CLASS_INFO).map(k => {
-      const why = classRequirement(c, k);
-      const school = CLASS_INFO[k].school;
-      const hasSchool = g.hasSchool(school);
-      if (!hasSchool && !tomes) return '';
-      return `<button class="ct-tac" data-enroll="${k}" ${why ? `disabled data-tipt="${esc(why)}"` : `data-tipt="${hasSchool ? 'Train at the ' + SCHOOLS[school].name + ' (' + SCHOOLS[school].days + ' days, halved with an instructor)' : 'Read a Class Tome (1 day)'}"`}>${esc(CLASSES[k].name)}${hasSchool ? '' : ' 📕'}</button>`;
-    }).filter(Boolean);
-    if (!rows.length) return `<div class="sect">Change class</div><div class="mini">Build a Combat School, Mage School or Temple — or find a Class Tome in the Rift — to train a new class.</div>`;
-    return `<div class="sect">Change class${c.tree ? ' <span class="mini">— keeps level, refunds points, a mood hit</span>' : ''}</div><div class="ct-row">${rows.join('')}</div>`;
+    // Every class shows, grouped by where it's taught — a locked one says how
+    // to open it, so the way to a Fighter is never a mystery.
+    const bySchool = {};
+    for (const o of opts) (bySchool[o.school] || (bySchool[o.school] = [])).push(o);
+    const groups = Object.entries(bySchool).map(([school, list]) => {
+      const S = SCHOOLS[school];
+      const head = g.hasSchool(school) ? `🏫 ${esc(S.name)}` : tomes ? `📕 Class Tome (no ${esc(S.name)} yet)` : `🔒 ${esc(S.name)}`;
+      return `<div class="ct-row"><span class="mini">${head}</span>${list.map(o =>
+        `<button class="ct-tac${o.ready ? ' ready' : ''}" data-enroll="${o.k}" ${o.why ? `disabled data-tipt="${esc(o.why)}"` : `data-tipt="${esc(o.how)}"`}>${esc(CLASSES[o.k].name)}${o.via === 'tome' ? ' 📕' : ''}</button>`).join('')}</div>`;
+    });
+    const readyN = opts.filter(o => o.ready).length;
+    const tomeLine = tomes ? `<div class="mini">📕 ${tomes} Class Tome${tomes > 1 ? 's' : ''} in the stash — any class, one day's reading, no school needed.</div>` : '';
+    return `<div class="sect">${c.tree ? 'Change class' : 'Become a hero'}${readyN ? ` <em>${readyN} open</em>` : ''}</div>${tomeLine}${groups.join('')}
+      ${c.tree ? '<div class="mini">Changing keeps level and refunds skill points, at a mood cost.</div>' : ''}`;
+  }
+  /**
+   * Every class this colonist could take, and how: at a school, from a tome,
+   * or why not yet (attribute too low, no school, no tome). Shared by the
+   * colonist's Class tab and the People › Classes list.
+   */
+  classOptions(c) {
+    const g = this.game;
+    const tomes = g.reagents.class_tome || 0;
+    return Object.keys(CLASS_INFO).filter(k => k !== c.klass).map(k => {
+      const school = CLASS_INFO[k].school, S = SCHOOLS[school];
+      const req = classRequirement(c, k);
+      const has = g.hasSchool(school);
+      const via = has ? 'school' : tomes ? 'tome' : null;
+      const unlockTech = unlockerOf(S.building);
+      const noWay = !via ? (g.unlocked.has(S.building) ? `Build a ${S.name} to train this class, or find a Class Tome in the Rift.`
+        : `Research ${RESEARCH[unlockTech] ? RESEARCH[unlockTech].name : 'more'}, then build a ${S.name} — or find a Class Tome in the Rift.`) : '';
+      const why = req || noWay;
+      const how = via === 'school' ? `Train at the ${S.name}: ${S.days} days, halved with an instructor of level 5+.` : 'Read a Class Tome: one day, no school needed.';
+      return { k, school, via, why, how, ready: !why };
+    });
   }
   classChangeClick(e, c) {
     const en = e.target.closest('[data-enroll]'), cn = e.target.closest('[data-cancel]');
@@ -23131,7 +23984,7 @@ class UI {
     if (smithy) {
       const who = this.forgeFor != null ? g.colonists.find(c => c.id === this.forgeFor) : null;
       const pick = el('div', 'ws-row');
-      pick.innerHTML = `<label class="mini">For <select data-forgefor><option value="">the armory</option>${g.colonists.filter(c => !c.dead).map(c => `<option value="${c.id}"${who && who.id === c.id ? ' selected' : ''}>${esc(c.name.short)} · ${esc(c.title || CLASSES[c.klass].name)}</option>`).join('')}</select></label>`;
+      pick.innerHTML = `<label class="mini">For <select data-forgefor><option value="">the stash</option>${g.colonists.filter(c => !c.dead).map(c => `<option value="${c.id}"${who && who.id === c.id ? ' selected' : ''}>${esc(c.name.short)} · ${esc(c.title || CLASSES[c.klass].name)}</option>`).join('')}</select></label>`;
       body.appendChild(pick);
       const tbl = el('div', 'forge-grid');
       tbl.innerHTML = `<span></span>${FORGE_SLOTS.map(sl => `<span class="fg-h">${SLOT_ICONS[sl]} ${SLOT_NAMES[sl]}</span>`).join('')}`
@@ -23213,7 +24066,7 @@ class UI {
       <div class="gs-abil">${[...c.abilities, ...(c.combat.gearAbilities || [])].map((a, i) => `<div data-tip="ability:${a}"><span>${i >= c.abilities.length ? '💍' : ABILITIES[a].dmg && DAMAGE_TYPES[ABILITIES[a].dmg] ? DAMAGE_TYPES[ABILITIES[a].dmg].icon : '✨'}</span>${esc(ABILITIES[a].name)}</div>`).join('')}</div>
       <div class="sect">Potion belt <span class="mini">— packed from the stash when a delve leaves</span></div>
       <div class="gs-belt">${Array.from({ length: size }, (_, i) => `<select data-belt="${i}">${options(belt[i])}</select>`).join('')}</div>
-      <div class="sect">Armory (${g.armory.length})</div><div id="armory"></div>`;
+      <div class="sect">Stash (${g.armory.length})</div><div id="armory"></div>`;
     b.querySelectorAll('[data-belt]').forEach(sel => sel.onchange = () => {
       const nb = [...(c.belt || [])];
       nb[+sel.dataset.belt] = sel.value || undefined;
@@ -23252,8 +24105,10 @@ class UI {
   drawClassTab(b, c) {
     const info = CLASS_INFO[c.klass];
     if (!c.tree) {
-      b.innerHTML = `<div class="mini">${esc(CLASSES[c.klass].name)}s have no skill tree. Train them into a class at a school, or hand them a Class Tome.</div>
-        <div class="sect">Abilities</div><div class="gs-abil">${c.abilities.map(a => `<div data-tip="ability:${a}"><span>✨</span>${esc(ABILITIES[a].name)}</div>`).join('')}</div>` + this.classChangeHtml(c);
+      // A peasant's Class tab is about one thing: which hero they could become.
+      b.innerHTML = `<div class="mini">${esc(c.title || CLASSES[c.klass].name)}s have no skill tree and don't fight well. A class gives them one: skills, abilities and better gear.</div>`
+        + this.classChangeHtml(c)
+        + this.fold('peasant-abil', 'Current abilities', `<div class="gs-abil">${c.abilities.map(a => `<div data-tip="ability:${a}"><span>✨</span>${esc(ABILITIES[a].name)}</div>`).join('')}</div>`);
       b.onclick = (e) => this.classChangeClick(e, c);
       return;
     }
@@ -23357,7 +24212,7 @@ class UI {
     const alias = { bio: 'overview', social: 'overview', health: 'overview' };
     if (alias[this.tab]) this.tab = alias[this.tab];
     if (!['overview', 'skills', 'gear', 'class'].includes(this.tab)) this.tab = 'overview';
-    this.setTabs(['overview', 'skills', 'gear']);
+    this.setTabs(['overview', 'class', 'skills', 'gear']);
     const b = $('#inspector .insp-body');
     b.innerHTML = '';
     if (this.tab === 'overview') {
@@ -23366,38 +24221,45 @@ class UI {
         .map(([id, r]) => [g.colonists.find(x => x.id === +id), r])
         .filter(([o]) => o).sort((x, y) => Math.abs(y[1].value) - Math.abs(x[1].value)).slice(0, 4);
       const thoughts = c.thoughts.slice(-4).reverse();
+      // Mood leads: it drives work speed, breaks and loyalty. Its two biggest
+      // reasons sit right under it; the full list folds away.
+      const why = c.away ? [] : moodBreakdown(g, c).sort((x, y) => Math.abs(y.v) - Math.abs(x.v));
+      const fmt = (r) => `<span class="${r.v > 0 ? 'kw-good-ink' : 'kw-bad-ink'}">${esc(r.label)} ${r.v > 0 ? '+' : ''}${Math.round(r.v)}</span>`;
+      const low = needs.filter(([n]) => c.needs[n] < 0.5);
       b.innerHTML = `
-        <div class="sect">Needs</div>
-        ${needs.map(([n, lb]) => kbar(lb, c.needs[n] * 100, 100, levelStatus(c.needs[n]),
-          c.needs[n] < 0.25 ? 'critical' : Math.round(c.needs[n] * 100) + '%')).join('')}
+        <div class="mood-why">${why.length ? why.slice(0, 2).map(fmt).join(' · ') : '<span class="mini">Nothing much on their mind.</span>'}</div>
+        ${low.length ? `<div class="sect">Needs</div>${low.map(([n, lb]) => kbar(lb, c.needs[n] * 100, 100, levelStatus(c.needs[n]),
+          c.needs[n] < 0.25 ? 'critical' : Math.round(c.needs[n] * 100) + '%')).join('')}` : ''}
         ${c.injuries.length ? `<div class="sect">Injuries</div>${c.injuries.map(i => `<div class="row"><span class="k">${esc(i.name)}</span>
           <span class="v" style="color:${i.heal < 0 ? 'var(--danger)' : i.treated ? 'var(--good)' : 'var(--warn)'}">${i.heal < 0 ? 'permanent' : i.treated ? 'treated' : 'untreated'}</span></div>`).join('')}` : ''}
         <div class="sect">Traits</div>
-        <div>${c.traits.map(t => `<span class="tag" data-tip="trait:${t}">${TRAITS[t].name}</span>`).join('') || '<span class="mini">None of note.</span>'}</div>
-        ${thoughts.length ? `<div class="sect">On their mind</div>${thoughts.map(t => { const T = THOUGHTS[t.id]; return `<div class="row thought" data-tip="thought:${t.id}"><span class="k">${T.name}</span><span class="v" style="color:${T.v > 0 ? 'var(--good)' : 'var(--bad)'}">${T.v > 0 ? '+' : ''}${T.v}</span></div>`; }).join('')}` : ''}
-        ${rels.length ? `<div class="sect">Closest bonds</div>${rels.map(([o, r]) => `<div class="row"><span class="k">${esc(o.name.short)}${c.partner === o.id ? ' ♥' : ''}</span>
+        <div>${kwList('trait', c.traits, '<span class="mini">None of note.</span>')}</div>
+        ${this.fold('col-mind', `On their mind (${why.length})`, why.map(r => `<div class="row thought"${THOUGHTS[r.id] ? ` data-tip="thought:${r.id}"` : ''}><span class="k">${esc(r.label)}</span><span class="v ${r.v > 0 ? 'kw-good-ink' : 'kw-bad-ink'}">${r.v > 0 ? '+' : ''}${Math.round(r.v)}</span></div>`).join('') || '<div class="mini">Nothing.</div>')}
+        ${this.fold('col-more', 'Needs, bonds and background', `${needs.map(([n, lb]) => kbar(lb, c.needs[n] * 100, 100, levelStatus(c.needs[n]), Math.round(c.needs[n] * 100) + '%')).join('')}
+          ${rels.length ? `<div class="sect">Closest bonds</div>${rels.map(([o, r]) => `<div class="row"><span class="k">${esc(o.name.short)}${c.partner === o.id ? ' ♥' : ''}</span>
           <span class="v" style="color:${r.value > 40 ? 'var(--good)' : r.value < -30 ? 'var(--bad)' : 'var(--dim)'}">${relKind(r.value).name}</span></div>`).join('')}` : ''}
-        <div class="mini" style="margin-top:8px">${esc(c.background)} · from ${esc(c.faction)}</div>`;
+          <div class="mini" style="margin-top:8px">${esc(c.background)} · from ${esc(c.faction)}</div>`)}`;
     } else if (this.tab === 'skills') {
       b.innerHTML = `<button class="act wide${pts ? ' primary' : ''}" id="openclass">${CLASSES[c.klass].name} tree${pts ? ` — ${pts} point${pts > 1 ? 's' : ''} to spend` : ''} ›</button>
         <div class="sect">Skills</div>`
-        + SKILL_IDS.slice().sort((x, y) => c.skills[y] - c.skills[x]).map(s => {
-          const lv = c.skills[s], p = c.passions[s];
-          return `<div class="skill" data-tip="skill:${c.id}|${s}"><span class="nm">${SKILLS[s].name}</span><span class="lv">${lv}</span>
+        + (() => {
+          // The five best, then the rest folded; untouched skills with no passion aren't worth a row.
+          const row = (s) => {
+            const lv = c.skills[s], p = c.passions[s];
+            return `<div class="skill" data-tip="skill:${c.id}|${s}"><span class="nm">${SKILLS[s].name}</span><span class="lv">${lv}</span>
             <span class="tr"><i style="width:${lv / 20 * 100}%;background:${seqStep(lv / 20)}"></i></span>
             <span class="ps">${p === 'burning' ? '★' : p === 'minor' ? '✦' : ''}</span></div>`;
-        }).join('')
+          };
+          const all = SKILL_IDS.slice().sort((x, y) => c.skills[y] - c.skills[x]).filter(s => c.skills[s] > 0 || c.passions[s]);
+          return all.slice(0, 5).map(row).join('') + (all.length > 5 ? this.fold('col-skills', `${all.length - 5} more skills`, all.slice(5).map(row).join('')) : '');
+        })()
         + `<div class="hint">★ burning passion · ✦ some interest. Set who does what in People › Duties.</div>
-        <div class="sect">Attributes</div>
-        <div class="attrs">${ATTRS.map(a => `<div><span>${a.toUpperCase()}</span><b>${c.attributes[a]}</b></div>`).join('')}</div>`;
+        ${this.fold('col-attrs', 'Attributes', `<div class="attrs">${ATTRS.map(a => `<div><span>${a.toUpperCase()}</span><b>${c.attributes[a]}</b></div>`).join('')}</div>`)}`;
       const ob = b.querySelector('#openclass');
       if (ob) ob.onclick = () => { this.tab = 'class'; this.renderInspector(); };
     } else if (this.tab === 'gear') {
       this.drawGearTab(b, c);
     } else if (this.tab === 'class') {
-      const back = el('button', 'act', '‹ Skills');
-      back.onclick = () => { this.tab = 'skills'; this.renderInspector(); };
-      b.appendChild(back);
       this.drawClassTab(b, c);
     }
   }
@@ -23408,24 +24270,25 @@ class UI {
     const f = w.feature[i], bd = w.building[i], fl = w.floor[i];
     const icon = bd ? (BUILDING_ICON[bd.id] || '🧱') : (f ? (FEATURE_ICON[f] || '·') : (terr.mineable ? '🪨' : '·'));
     $('#inspector .insp-title').innerHTML = `${icon} ${esc(bd ? BUILDINGS[bd.id].name : (f ? FEATURES[f].name : terr.name))}`;
-    $('#inspector .insp-sub').textContent = `tile ${x},${y}`;
+    $('#inspector .insp-sub').textContent = bd ? (bd.done ? BUILDINGS[bd.id].cat : 'blueprint') : (f ? terr.name : '');
     this.setTabs([]);
     const b = $('#inspector .insp-body');
-    b.innerHTML = `<div class="row"><span class="k">Terrain</span><span class="v">${terr.name}</span></div>
-      ${f ? `<div class="row"><span class="k">Feature</span><span class="v">${FEATURE_ICON[f] || ''} ${FEATURES[f].name}</span></div>
-        <div class="mini">yields ${Object.entries(FEATURES[f].yield).map(([k, v]) => `${RESOURCE_ICON[k] || ''} ${v} ${RESOURCES[k].name}`).join(', ')}</div>` : ''}
+    // Lead with what the tile is for; the survey numbers fold away below.
+    b.innerHTML = `
+      ${f ? `<div class="mini">Yields ${Object.entries(FEATURES[f].yield).map(([k, v]) => kw('res', k, { qty: v })).join('')}</div>` : ''}
       ${bd ? `<div class="row"><span class="k">Building</span><span class="v">${BUILDINGS[bd.id].name}${bd.done ? '' : ' (blueprint)'}</span></div>
         <div class="mini">${esc(BUILDINGS[bd.id].desc)}</div>
-        ${bd.done ? `<div class="row"><span class="k">Integrity</span><span class="v">${Math.round(bd.hp)}</span></div>` : ''}
+        ${bd.done && bd.hp < (BUILDINGS[bd.id].hp || 120) ? meter({ label: 'Damaged', icon: '🧱', value: Math.round(bd.hp), max: BUILDINGS[bd.id].hp || 120, color: levelStatus(bd.hp / (BUILDINGS[bd.id].hp || 120)) }) : ''}
         ${bd.done && UPGRADES[bd.id] ? `<div class="row"><span class="k">Level</span><span class="v lvl-pips">${'●'.repeat(levelOf(bd))}${'○'.repeat(MAX_LEVEL - levelOf(bd))} ${levelOf(bd)}/${MAX_LEVEL}</span></div>
           <div class="mini">${esc(UPGRADES[bd.id].per)}</div>
           ${bd.upgrade ? `<div class="mini" style="color:var(--hi)">Upgrading to level ${bd.upgrade.to}: ${costLine(bd.upgrade.cost)}${hasAllOf(g, bd.upgrade.cost) ? '' : ' — waiting on materials or gold'}</div>` : ''}` : ''}` : ''}
       ${fl ? `<div class="row"><span class="k">Floor</span><span class="v">${FLOOR_ICON[fl.id] || ''} ${FLOORS[fl.id].name}${fl.done ? '' : ' (laying)'}</span></div>` : ''}
-      ${meter({ label: 'Light', icon: '💡', value: Math.round(w.light[i] * 100), max: 100, color: '#e2b23c' })}
-      ${meter({ label: 'Beauty', icon: '✨', value: +w.beauty[i].toFixed(1), max: 20, color: '#9085e9' })}
-      ${w.soil ? meter({ label: 'Soil', icon: '🟫', value: Math.round(w.soil[i] * 100), max: 100, color: '#c98500' }) : ''}
-      ${w.water ? meter({ label: 'Water', icon: '💧', value: Math.round(w.water[i] * 100), max: 100, color: '#3987e5' }) : ''}
-      <div class="sect">Actions</div><div id="tileacts"></div>`;
+      <div class="sect">Actions</div><div id="tileacts"></div>
+      ${this.fold('tile-survey', 'Survey', `<div class="mini">${esc(terr.name)}</div>
+        ${meter({ label: 'Light', icon: '💡', value: Math.round(w.light[i] * 100), max: 100, color: '#e2b23c' })}
+        ${meter({ label: 'Beauty', icon: '✨', value: +w.beauty[i].toFixed(1), max: 20, color: '#9085e9' })}
+        ${w.soil ? meter({ label: 'Soil', icon: '🟫', value: Math.round(w.soil[i] * 100), max: 100, color: '#c98500' }) : ''}
+        ${w.water ? meter({ label: 'Water', icon: '💧', value: Math.round(w.water[i] * 100), max: 100, color: '#3987e5' }) : ''}`)}`;
     const box = b.querySelector('#tileacts');
     const add = (label, fn, cls) => { const btn = el('button', 'act ' + (cls || ''), label); btn.onclick = () => { fn(); this.renderInspector(); this.renderer.cacheVersion = -1; }; box.appendChild(btn); };
     if (bd && bd.done && BUILDINGS[bd.id].job === 'farm') {
@@ -23568,7 +24431,7 @@ class UI {
         color: powerOf(r) > best ? STATUS.critical : STATUS.good,
         note: powerOf(r) > best ? 'stronger than anyone at home' : `your best fields ${best}`,
       })
-      + `<div class="sect">Traits</div><div>${r.traits.map(t => `<span class="tag" data-tip="trait:${t}">${TRAITS[t].name}</span>`).join('')}</div>
+      + `<div class="sect">Traits</div><div>${kwList('trait', r.traits)}</div>
       <div class="sect">Gear</div>
       <div class="mini">⚔️ ${r.equipment.weapon ? esc(r.equipment.weapon.name) : 'unarmed'} · 🛡️ ${r.equipment.armor ? esc(r.equipment.armor.name) : 'no armour'}</div>`;
   }
@@ -23596,7 +24459,7 @@ class UI {
       ${A.pack ? `<div class="row"><span class="k">🎒 Pack capacity</span><span class="v">+${A.pack}</span></div>` : ''}
       ${b.pregnant > 0 ? `<div class="row"><span class="k">🤰 Pregnant</span><span class="v">${b.pregnant.toFixed(1)}d left</span></div>` : ''}
       <div class="sect">Traits</div>
-      <div>${b.traits.length ? b.traits.map(t => `<span class="tag" data-tip="btrait:${t}">${BEAST_TRAITS[t].name}</span>`).join('') : '<span class="mini">Unremarkable.</span>'}</div>
+      <div>${kwList('btrait', b.traits, '<span class="mini">Unremarkable.</span>')}</div>
       <div class="sect">Orders</div><div id="beastacts"></div>`;
     const box = body.querySelector('#beastacts');
     if (b.tame) {
@@ -23643,7 +24506,33 @@ class UI {
       ${s.stock ? `<div class="sect">Produces</div>${Object.entries(s.stock).map(([k, v]) => `<div class="row"><span class="k">${RESOURCE_ICON[k] || ''} ${RESOURCES[k]?.name || k}</span><span class="v">${v}</span></div>`).join('')}` : ''}
       ${s.raidsLaunched ? `<div class="sect">Threat</div><div class="mini">${s.raidsLaunched} raid(s) have come from here.</div>` : ''}
       ${s.cleared ? '<div class="mini" style="color:var(--good)">Cleared.</div>' : ''}
-`;
+      ${this.siteJourneyHtml(s)}`;
+    const box = $('#inspector .insp-body');
+    box.onclick = (e) => {
+      const b = e.target.closest && e.target.closest('[data-site-go]');
+      if (!b || b.disabled) return;
+      const ids = [...this.squad].filter(id => { const c = g.colonists.find(x => x.id === id); return c && !c.away && !(c.mapId || 0); });
+      const r = sendJourney(g, ids, s.id, b.dataset.siteGo);
+      if (r) this.toast(r, 'warn'); else { this.flash(`${ERRANDS[b.dataset.siteGo].name}: they set out for ${s.name}.`, 'good'); this.squad.clear(); }
+      this.sigs.insp = null; this.renderInspector(); this.sigs.drawer = null; this.renderDrawer();
+    };
+  }
+  /** A site's offer to a party: what's there to get, how far, and the button that sends them. */
+  siteJourneyHtml(s) {
+    const g = this.game;
+    const pv = siteRewardPreview(g, s, Math.max(1, this.squad.size));
+    if (!pv) return '';
+    const party = [...this.squad].map(id => g.colonists.find(c => c.id === id)).filter(c => c && !c.away && !(c.mapId || 0));
+    const days = journeyDays(g, s);
+    const E = ERRANDS[pv.errand];
+    const reward = [...Object.entries(pv.res || {}).map(([k, q]) => kw('res', k, { qty: q })), pv.text ? `<span class="mini">${esc(pv.text)}</span>` : ''].join(' ');
+    const odds = pv.errand === 'clear' && party.length ? clearOdds(party, s) : null;
+    const why = !party.length ? 'Select who goes on the colonist bar first.' : pv.ready === false ? 'Pilgrims went lately — wait a few days.' : '';
+    return `<div class="sect">🧭 Journey <em>${days} day${days === 1 ? '' : 's'} there and back</em></div>
+      <div class="mini">${esc(E.desc)}</div>
+      <div class="goal-rw"><span class="mini">Brings back</span>${reward}${pv.first ? '<span class="kw kw-good"><i>✨</i>first haul doubled</span>' : ''}</div>
+      ${pv.risk ? `<div class="mini" style="color:var(--warn)">⚠️ ${odds != null ? `${Math.round(odds * 100)}% chance this party wins.` : 'It may be guarded.'} Send fighters.</div>` : ''}
+      <div class="ct-row"><button class="act primary" data-site-go="${pv.errand}"${why ? ` disabled data-tipt="${esc(why)}"` : ''}>🧭 ${esc(E.name)}${party.length ? ` — send ${party.map(c => esc(c.name.short)).join(', ')}` : ''}</button></div>`;
   }
 
   inspHistory(h) {
@@ -23754,7 +24643,7 @@ class UI {
       box.innerHTML = `<div class="an">${FLOOR_ICON[floorId] || ''} ${esc(def.name)}</div>
         <div class="ad">${esc(def.desc)}</div>
         <div class="ad">Cost: ${Object.entries(def.cost).map(([k, v]) =>
-          `<span style="color:${(g.resources[k] || 0) >= v ? 'var(--ink)' : 'var(--danger)'}">${RESOURCE_ICON[k] || ''} ${v} ${RESOURCES[k].name}</span>`).join(' · ')}
+          kw('res', k, { qty: v, state: (g.resources[k] || 0) >= v ? undefined : 'bad' })).join('')}
           · Work ${Math.round(def.work)}</div>
         ${short.length ? `<div class="ad" style="color:var(--danger)">Short of ${short.map(([k, v]) => `${Math.ceil(v - (g.resources[k] || 0))} ${RESOURCES[k].name}`).join(' and ')}</div>` : ''}`;
       return;
@@ -23765,7 +24654,7 @@ class UI {
     box.innerHTML = `<div class="an">${BUILDING_ICON[id] || ''} ${esc(def.name)}</div>
       <div class="ad">${esc(def.desc)}</div>
       <div class="ad">Cost: ${Object.entries(def.cost).map(([k, v]) =>
-        `<span style="color:${(g.resources[k] || 0) >= v ? 'var(--ink)' : 'var(--danger)'}">${RESOURCE_ICON[k] || ''} ${v} ${RESOURCES[k].name}</span>`).join(' · ')}
+        kw('res', k, { qty: v, state: (g.resources[k] || 0) >= v ? undefined : 'bad' })).join('')}
         · Work ${Math.round(def.work)}</div>
       ${!g.unlocked.has(id) ? (() => { const tech = unlockerOf(id), R = RESEARCH[tech]; const q = g.research.current === tech || g.research.queue.includes(tech);
         return `<div class="ad" style="color:var(--warn)">🔒 Needs research: <b>${esc(R ? R.name : tech)}</b>${q ? ' — queued' : ' — click to queue it'}</div>`; })()

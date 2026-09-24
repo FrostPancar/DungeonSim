@@ -6,7 +6,7 @@
 // Presentation only: it reads the game and never changes it.
 // ============================================================================
 import {
-  BUILDINGS, FLOORS, RESOURCES, RACES, CLASSES, SKILLS, SKILL_IDS, TRAITS, RESEARCH, RECIPES,
+  BUILDINGS, FLOORS, RESOURCES, RESOURCE_SOURCES, RESOURCE_USES, RACES, CLASSES, SKILLS, SKILL_IDS, TRAITS, RESEARCH, RECIPES,
   THOUGHTS, ABILITIES, DUNGEON_THEMES, dispositionOf,
 } from './data.js';
 import { TERRAIN, FEATURES } from './world.js';
@@ -19,6 +19,7 @@ import { DAMAGE_TYPES, STATUSES, TAGS } from './elements.js';
 import { FAMILIES, bestiaryKnowledge } from './monsters.js';
 import { RARITIES, SLOT_ICONS, SLOT_NAMES, WEAPON_FAMILIES, WEIGHTS, PASSIVES, POTIONS } from './items.js';
 import { CLASS_INFO } from './classes.js';
+import { kw, kwList, traitSentiment, beastTraitSentiment } from './keywords.js';
 import {
   RACE_ICON, ANIMAL_ICON, FEATURE_ICON, BUILDING_ICON, FLOOR_ICON, SITE_ICON, RESOURCE_ICON, CROP_ICON,
   TECH_ICON, taskIcon, moodStatus, levelStatus, STATUS, labourOf, LABOUR_BY_ID,
@@ -55,6 +56,12 @@ function abilityTip(id) {
   return html;
 }
 
+/** One line saying whether a trait helps or hurts, in the keyword colours. */
+function tVerdict(sent) {
+  const t = { good: 'Helps', bad: 'Hurts', mixed: 'A trade-off' }[sent] || '';
+  return t ? `<div class="tt-l kw-${sent}-ink">${t}</div>` : '';
+}
+
 export function tipHtml(g, key) {
   const i = key.indexOf(':');
   const kind = i < 0 ? key : key.slice(0, i);
@@ -71,8 +78,8 @@ export function tipHtml(g, key) {
       case 'site': return tipSite(g, g.overworld.sites.find(s => String(s.id) === id));
       case 'rift': return tipRift(g);
       case 'stairs': return tipStairs(g, id);
-      case 'trait': return TRAITS[id] ? tHead('', TRAITS[id].name) + tDesc(tEsc(TRAITS[id].desc)) + traitMods(TRAITS[id].mods) : '';
-      case 'btrait': return BEAST_TRAITS[id] ? tHead('', BEAST_TRAITS[id].name) + traitMods(BEAST_TRAITS[id].mods) : '';
+      case 'trait': return TRAITS[id] ? tHead('', TRAITS[id].name) + tVerdict(traitSentiment(id)) + tDesc(tEsc(TRAITS[id].desc)) + traitMods(TRAITS[id].mods) : '';
+      case 'btrait': return BEAST_TRAITS[id] ? tHead('', BEAST_TRAITS[id].name) + tVerdict(beastTraitSentiment(id)) + traitMods(BEAST_TRAITS[id].mods) : '';
       case 'skill': { const [cid, sk] = id.split('|'); return tipSkill(g, g.colonists.find(c => String(c.id) === cid), sk); }
       case 'arm': return tipItem(g.armory[+id]);
       case 'ti': return tipItem(TIP_ITEMS.get(+id));
@@ -107,8 +114,9 @@ function tipResource(g, k) {
   if (!R) return '';
   const v = Math.floor(g.resources[k] || 0), cap = g.storageCap;
   let html = tHead(RESOURCE_ICON[k], R.name, `${R.cat} · worth ${PRICES[k] != null ? PRICES[k] + 'g' : '—'} each`);
-  html += tBar('Stored', v / cap, v > cap ? STATUS.warn : R.color, `${v} / ${cap}`);
-  if (v > cap) html += tDesc('Over the storage ceiling — new hauls are being lost. Build a 📦 Stockpile.');
+  if (k === 'gold') html += tRow('Treasury', `${v} — gold has no storage limit`);
+  else html += tBar('Stored', v / cap, v > cap ? STATUS.warn : R.color, `${v} / ${cap}`);
+  if (v > cap && k !== 'gold') html += tDesc('Over the storage ceiling — new hauls are being lost. Build a 📦 Stockpile.');
   if (k === 'food' || k === 'meal') {
     const fd = foodDaysOf(g);
     html += tRow('Food lasts', `${fd >= 99 ? '99+' : fd.toFixed(1)} days`, fd > 6 ? STATUS.good : fd > 2.5 ? STATUS.warn : STATUS.critical);
@@ -127,8 +135,24 @@ function tipResource(g, k) {
   const into = [];
   for (const b in BUILDINGS) if (BUILDINGS[b].cost[k] && g.unlocked.has(b)) into.push(`${BUILDING_ICON[b] || '🧱'} ${BUILDINGS[b].name}`);
   for (const r in RECIPES) if (RECIPES[r].inputs[k]) into.push(`⚒️ ${RECIPES[r].name}`);
-  if (from.length) html += tSep + `<div class="tt-l"><em>From</em> ${from.slice(0, 6).join(' · ')}${from.length > 6 ? ' …' : ''}</div>`;
-  if (into.length) html += `<div class="tt-l"><em>Used by</em> ${into.slice(0, 6).join(' · ')}${into.length > 6 ? ' …' : ''}</div>`;
+  // The curated lines lead; a derived one that says the same thing again goes.
+  const merge = (curated, derived) => {
+    const said = curated.join(' ').toLowerCase();
+    return [...new Set([...curated, ...derived.filter(d => !said.includes(d.replace(/^\S+\s/, '').toLowerCase()))])];
+  };
+  from.splice(0, from.length, ...merge(RESOURCE_SOURCES[k] || [], from));
+  into.splice(0, into.length, ...merge(RESOURCE_USES[k] || [], into));
+  const locked = Object.keys(BUILDINGS).filter(b => BUILDINGS[b].cost[k] && !g.unlocked.has(b)).length;
+  if (k === 'gold') {
+    const last = (g.ledger && g.ledger.days || []).filter(d => d.net != null).slice(-3);
+    if (last.length) {
+      const avg = Math.round(last.reduce((a, d) => a + d.net, 0) / last.length);
+      html += tRow('Per day', `${avg >= 0 ? '▲ +' : '▼ '}${avg} (last ${last.length} day${last.length > 1 ? 's' : ''})`, avg >= 0 ? STATUS.good : STATUS.bad);
+    }
+  }
+  if (from.length) html += tSep + `<div class="tt-l"><em>Where from</em> ${from.slice(0, 7).join(' · ')}${from.length > 7 ? ' …' : ''}</div>`;
+  else html += tSep + `<div class="tt-l"><em>Where from</em> —</div>`;
+  if (into.length) html += `<div class="tt-l"><em>What for</em> ${into.slice(0, 7).join(' · ')}${into.length > 7 ? ' …' : ''}${locked ? ` · <span class="dim">+${locked} locked by research</span>` : ''}</div>`;
   return html;
 }
 
@@ -150,7 +174,7 @@ function tipColonist(g, c) {
   html += tBar('Joy', c.needs.joy, levelStatus(c.needs.joy), tPct(c.needs.joy));
   const top = SKILL_IDS.map(s => [s, c.skills[s]]).sort((a, b) => b[1] - a[1]).slice(0, 3);
   html += tSep + `<div class="tt-l"><em>Best at</em> ${top.map(([s, v]) => `${SKILLS[s].name} <b>${v}</b>${c.passions[s] === 'burning' ? '🔥' : ''}`).join(' · ')}</div>`;
-  html += `<div class="tt-l"><em>Traits</em> ${c.traits.map(t => TRAITS[t].name).join(', ')}</div>`;
+  html += `<div class="tt-l"><em>Traits</em> ${kwList('trait', c.traits)}</div>`;
   const pets = followersOf(g.root || g, c);
   if (pets.length) html += `<div class="tt-l"><em>Beasts</em> ${pets.map(b => `${ANIMAL_ICON[b.species] || '🐾'} ${tEsc(b.name)}`).join(', ')}</div>`;
   html += `<div class="tt-l"><em>Loyalty</em> <span style="color:${disp.color}">${disp.name}</span>${c.injuries.length ? ` · <em>Injuries</em> ${c.injuries.length}` : ''}</div>`;
@@ -200,7 +224,7 @@ function tipBeast(g, b) {
     const best = g.colonists.filter(c => !c.away).sort((x, y) => (y.skills.animals || 0) - (x.skills.animals || 0))[0];
     if (best) html += tRow('Tame chance', `${tPct(tameChance(best, b))} <span class="tt-dim">(${tEsc(best.name.short)})</span>`);
   }
-  if (b.traits.length) html += `<div class="tt-l"><em>Traits</em> ${b.traits.map(t => BEAST_TRAITS[t].name).join(', ')}</div>`;
+  if (b.traits.length) html += `<div class="tt-l"><em>Traits</em> ${kwList('btrait', b.traits)}</div>`;
   html += tDesc(tEsc(A.desc));
   return html;
 }

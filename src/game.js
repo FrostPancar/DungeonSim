@@ -50,7 +50,7 @@ const CAMP_LAYOUT = [
   ['brazier', -4, 0], ['brazier', 4, 0], ['brazier', 0, -3],
 ];
 
-export const START_UNLOCKED = ['wall', 'door', 'bed', 'table', 'brazier', 'stockpile', 'farm', 'kitchen', 'carpenter', 'library', 'training',
+export const START_UNLOCKED = ['wall', 'door', 'bed', 'table', 'brazier', 'stockpile', 'farm', 'kitchen', 'carpenter', 'library',
   'timber_wall', 'rug', 'bedroll', 'campfire', 'torch', 'planter', 'bench', 'game_table', 'shelf', 'shed', 'well', 'scarecrow', 'stakes'];
 
 // --- telemetry --------------------------------------------------------------
@@ -136,7 +136,9 @@ export class Game {
     Object.assign(this.resources, { wood: 160, stone: 140, food: 90, cloth: 24, leather: 12, iron: 24, gold: 40, herbs: 10, meal: 12, ...(opts.resources || {}) });
 
     this.armory = [];
-    this.reagents = {};   // essences and rare finds: the magic economy's raw stuff
+    // Essences and rare finds: the magic economy's raw stuff. The camp starts
+    // with one Class Tome so a peasant can become a hero before any school stands.
+    this.reagents = { class_tome: 1 };
     this.potions = {};    // brewed potions beyond minor healing (which is resources.potion)
     this.library = { scrolls: {}, books: {} };   // single-use scrolls and teachable spellbooks
     this.spellParts = { forms: [...STARTING_PARTS.forms], elements: [...STARTING_PARTS.elements], mods: [...STARTING_PARTS.mods] };
@@ -831,6 +833,10 @@ export class Game {
           if (this.autoSkills) autoAllocate(c, this.rng.fork('grad' + c.id));
           refresh(c);
           addThought(c, wasAdventurer ? 'starting_over' : 'graduated');
+          // A graduate is no longer a peasant: they keep adventurer's hours and
+          // answer to their class's name.
+          if (c.peasant) { c.peasant = false; c.title = null; }
+          this.stats.graduates = (this.stats.graduates || 0) + 1;
           this.log(`${c.name.short} is now a ${CLASSES[t.klass].name}!`, 'major', c.id);
           c.training = null;
         }

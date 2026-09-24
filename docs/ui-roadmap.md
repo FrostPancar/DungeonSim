@@ -1,6 +1,6 @@
 # Rift Gate — UI Revamp & QoL Roadmap
 
-*Status: **proposal** (2026-09-24). Nothing here is built. Companion docs: `docs/progression-roadmap.md` and `docs/tutorial-roadmap.md`.*
+*Status: **mostly built** (2026-09-24). Built: §3 keywords (`src/keywords.js`, traits everywhere, resource costs), §4 inspector (bare ground closes it; tile survey folded), §5 (People › Classes, Class tab, R/T/N keys, urgency rings, alert stack capped at three with a gold "decision" kind, Rift goal card, gold-first resource bar), §6 in part (colonist overview leads with mood and its reasons; skills and attributes folded), §7 in part (Esc closes a thing's panel before the window behind it). Not yet: the action popover, a 📌 pin, the resource bar's "More" fold, phone drag handle, §8. Companion docs: `docs/progression-roadmap.md` and `docs/tutorial-roadmap.md`.*
 
 ## 1. What the code shows
 

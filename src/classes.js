@@ -491,8 +491,40 @@ export function classRequirement(npc, klass) {
   const attr = npc.attributes[C.primary] || 0;
   const mainSkill = Object.entries(C.skills).sort((a, b) => b[1] - a[1])[0][0];
   const burning = npc.passions && npc.passions[mainSkill] === 'burning';
-  if (attr < 12 && !(burning && attr >= 10)) return `Needs ${C.primary.toUpperCase()} 12 (has ${attr}).`;
+  if (attr < 12 && !(burning && attr >= 10)) {
+    const drill = CLASS_INFO[klass] && CLASS_INFO[klass].school === 'combat' ? ' Drill at a Training Dummy to raise it.' : '';
+    return `Needs ${C.primary.toUpperCase()} 12 (has ${attr}).${drill}`;
+  }
   return '';
+}
+
+// --- drilling: the Training Dummy's way into a Combat class --------------------
+// A peasant too weak or slow for any Combat class can drill until they aren't:
+// every DRILL_SESSIONS sessions at a dummy lift the most promising Combat
+// attribute by one, and it stops at 12 — the bar, not a way past it.
+export const DRILL_SESSIONS = 6;
+export const DRILL_CAP = 12;
+/** The attribute drilling would raise, or null once any Combat class is open to them. */
+export function drillTarget(npc) {
+  if (CLASS_INFO[npc.klass] && CLASS_INFO[npc.klass].school === 'combat') return null;
+  let best = null;
+  for (const [k, info] of Object.entries(CLASS_INFO)) {
+    if (info.school !== 'combat') continue;
+    const attr = CLASSES[k].primary, v = npc.attributes[attr] || 0;
+    if (!classRequirement(npc, k)) return null;
+    if (v < DRILL_CAP && (!best || v > best.value)) best = { attr, value: v, klass: k };
+  }
+  return best;
+}
+/** One session at the dummy. Returns the attribute raised this session, if any. */
+export function drillSession(npc) {
+  const t = drillTarget(npc);
+  if (!t) return null;
+  npc.drill = (npc.drill || 0) + 1;
+  if (npc.drill < DRILL_SESSIONS) return null;
+  npc.drill = 0;
+  npc.attributes[t.attr] = Math.min(DRILL_CAP, (npc.attributes[t.attr] || 0) + 1);
+  return t.attr;
 }
 
 /**

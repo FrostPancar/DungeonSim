@@ -10,6 +10,7 @@ import {
 import { World, T, TERRAIN, FEATURES, findPath, findNearest, lineOfSight } from './world.js';
 import { occupyMove, occupantAt, freeTileNear, swapUnits, formationTiles, rebuildOccupancy } from './occupancy.js';
 import { traitMod, refresh, shiftHostility } from './npc.js';
+import { drillSession, drillTarget } from './classes.js';
 import { CROPS, cropViability, recommendCrop, SOIL_DRAIN, growthStage } from './farming.js';
 import { ANIMALS, tameChance, butcherBeast, isMature, beastMod, herdCap } from './husbandry.js';
 import { nearestHostile, tickDowned, sendToSafety, ENGAGE, RANGED_R } from './realtime.js';
@@ -404,23 +405,39 @@ export function addThought(npc, id, mult = 1) {
   if (npc.thoughts.length > 14) npc.thoughts.shift();
 }
 
-function updateMood(game, npc) {
-  let m = 50 + traitMod(npc, 'mood');
+/**
+ * Everything pushing a colonist's mood up or down right now, as labelled
+ * amounts on top of a base of 50. updateMood sums exactly this, so the reasons
+ * a panel shows are the reasons the number is what it is.
+ */
+export function moodBreakdown(game, npc) {
+  const out = [];
+  const base = traitMod(npc, 'mood');
+  if (base) out.push({ id: 'nature', label: 'Traits, wounds and gear', v: base });
   for (const t of npc.thoughts) {
     const def = THOUGHTS[t.id];
     if (def.dur === 0) continue; // transient handled below
-    m += def.v * Math.min(2, 0.6 + t.stacks * 0.4) * (t.mult || 1);
+    out.push({ id: t.id, label: def.name + (t.stacks > 1 ? ` ×${t.stacks}` : ''), v: def.v * Math.min(2, 0.6 + t.stacks * 0.4) * (t.mult || 1) });
   }
   const n = npc.needs;
-  if (n.hunger < 0.12) m += THOUGHTS.starving.v;
-  else if (n.hunger < 0.3) m += THOUGHTS.hungry.v;
-  if (n.rest < 0.15) m += THOUGHTS.exhausted.v;
-  if (npc.injuries.length) m += THOUGHTS.wounded.v * Math.min(3, npc.injuries.length) * 0.6;
-  const i = game.world.idx(npc.x, npc.y);
-  const beauty = game.world.beauty[i];
-  if (beauty > 6) m += THOUGHTS.beauty.v;
-  else if (beauty < 0.5 && game.world.light[i] < 0.15) m += THOUGHTS.dark.v;
-  m += (game.bonuses.moodFlat || 0);
+  if (n.hunger < 0.12) out.push({ id: 'starving', label: THOUGHTS.starving.name, v: THOUGHTS.starving.v });
+  else if (n.hunger < 0.3) out.push({ id: 'hungry', label: THOUGHTS.hungry.name, v: THOUGHTS.hungry.v });
+  if (n.rest < 0.15) out.push({ id: 'exhausted', label: THOUGHTS.exhausted.name, v: THOUGHTS.exhausted.v });
+  if (npc.injuries.length) out.push({ id: 'wounded', label: THOUGHTS.wounded.name, v: THOUGHTS.wounded.v * Math.min(3, npc.injuries.length) * 0.6 });
+  const w = game.world;
+  if (w.inside(npc.x, npc.y)) {
+    const i = w.idx(npc.x, npc.y);
+    const beauty = w.beauty[i];
+    if (beauty > 6) out.push({ id: 'beauty', label: THOUGHTS.beauty.name, v: THOUGHTS.beauty.v });
+    else if (beauty < 0.5 && w.light[i] < 0.15) out.push({ id: 'dark', label: THOUGHTS.dark.name, v: THOUGHTS.dark.v });
+  }
+  if (game.bonuses.moodFlat) out.push({ id: 'colony', label: 'Colony bonuses', v: game.bonuses.moodFlat });
+  return out;
+}
+
+function updateMood(game, npc) {
+  let m = 50;
+  for (const r of moodBreakdown(game, npc)) m += r.v;
   npc.mood = clamp(Math.round(m), 0, 100);
   npc.moodAvg = npc.moodAvg * 0.995 + npc.mood * 0.005;
 }
@@ -484,7 +501,7 @@ export function dropItems(game, x, y, yields, mult = 1) {
 }
 
 /** How much a colonist can carry out of the Rift: strong backs carry more. */
-export function packCap(npc) { return 60 + ((npc.attributes && npc.attributes.str) || 10) * 3 + (npc.packBonus || 0); }
+export function packCap(npc) { return 60 + ((npc.attributes && npc.attributes.str) || 10) * 3 + (npc.packBonus || 0) + (npc.packUpgrade || 0); }
 export function packLoad(npc) { let n = 0; for (const k in npc.pack || {}) n += npc.pack[k]; return n; }
 export function packRoom(npc) { return Math.max(0, packCap(npc) - packLoad(npc)); }
 
@@ -1034,7 +1051,17 @@ function completeTask(game, npc) {
       }
       break;
     }
-    case 'train': { gainXp(game, npc, t.trainSkill || (game.rng.chance(0.6) ? 'melee' : 'ranged'), 55); npc.needs.joy = clamp(npc.needs.joy + 0.05, 0, 1); break; }
+    case 'train': {
+      gainXp(game, npc, t.trainSkill || (game.rng.chance(0.6) ? 'melee' : 'ranged'), 55); npc.needs.joy = clamp(npc.needs.joy + 0.05, 0, 1);
+      const raised = drillSession(npc);
+      if (raised) {
+        refresh(npc);
+        const open = drillTarget(npc) === null;
+        game.log(open ? `${npc.name.short} has drilled hard enough: a Combat class is open to them now.`
+          : `${npc.name.short} is getting ${raised === 'str' ? 'stronger' : raised === 'dex' ? 'quicker' : 'better'} at the dummy (${raised.toUpperCase()} ${npc.attributes[raised]}).`, open ? 'good' : 'info', npc.id);
+      }
+      break;
+    }
     case 'pray': { gainXp(game, npc, 'faith', 55); addThought(npc, 'joy'); break; }
     case 'heal': {
       const patient = game.colonists.find(c => c.id === t.target);
