@@ -1,0 +1,11 @@
+{
+  "name": "rift-gate",
+  "version": "1.0.0",
+  "description": "Rift Gate — SSS Class Dungeon Colony Sim. Build a camp outside a giant rift, delve it by day, hold the line at night.",
+  "type": "module",
+  "scripts": {
+    "test": "node test/harness.mjs",
+    "bench": "node test/harness.mjs --bench",
+    "serve": "python3 -m http.server 8080"
+  }
+}

@@ -1,0 +1,12 @@
+# macOS
+.DS_Store
+
+# The purchased icon pack's source files. Its license covers using the icons in
+# the game (assets/icons.png, inlined into src/iconsheet.js), not redistributing
+# the pack itself.
+icons/
+
+# Local Claude Code settings
+.claude/settings.local.json
+
+node_modules/

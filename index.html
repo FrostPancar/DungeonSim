@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Rift Gate — SSS Class Dungeon Colony Sim</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <canvas id="map"></canvas>
+
+  <div id="res"></div>
+  <div id="colbar"></div>
+  <div id="fightlog" class="hidden"></div>
+  <div id="toasts"></div>
+  <div id="alerts"></div>
+
+  <div id="inspector" class="hidden">
+    <div class="insp-head">
+      <button class="close" title="Close (Esc)">✕</button>
+      <div class="insp-pt" style="display:none"></div>
+      <h4 class="insp-title">—</h4>
+      <div class="insp-sub"></div>
+    </div>
+    <div class="tabs"></div>
+    <div class="insp-body"></div>
+  </div>
+
+  <div id="drawer" class="drawer hidden">
+    <h3><span class="d-title">Panel</span><button class="d-close" title="Close (Esc)">✕</button></h3>
+    <div class="dtabs hidden"></div>
+    <div class="body"></div>
+  </div>
+
+  <div id="buildpick" class="hidden"></div>
+
+  <div id="toolhint"></div>
+
+  <div id="datebox">
+    <div id="maptabs" class="hidden"></div>
+    <div id="clock"></div>
+    <div id="threat"></div>
+    <div class="spd">
+      <button data-spd="p" title="Pause (space)">⏸</button>
+      <button data-spd="1" class="on" title="Normal speed (1)">▶</button>
+      <button data-spd="2" title="Fast (2)">▶▶</button>
+      <button data-spd="3" title="Superfast (3)">▶▶▶</button>
+      <button data-spd="4" title="Ultrafast (4)">▶▶▶▶</button>
+    </div>
+    <div class="toggles">
+      <button id="overlaybtn" title="Cycle the soil and water overlays (O)">🗺️</button>
+      <button id="hoverbtn" class="on" title="Hover info on the map">💬</button>
+      <button id="autobtn" title="Steward — the hold governs itself">🤖</button>
+      <button id="helpbtn" class="tx" title="Controls and map legend (?)">?</button>
+      <button id="menubtn" class="tx" title="Menu — save, options, quit (Esc)">☰</button>
+    </div>
+  </div>
+
+  <div id="rail"></div>
+
+  <div id="modal" class="hidden"></div>
+  <div id="help" class="hidden"></div>
+  <div id="gameover" class="hidden"></div>
+  <div id="gamemenu" class="hidden"></div>
+  <div id="options" class="hidden"></div>
+  <div id="title" class="hidden"></div>
+  <div id="tip" class="hidden"></div>
+</div>
+<script type="module">
+  import { UI } from './src/ui.js';
+  const params = new URLSearchParams(location.search);
+  window.ui = new UI(params.get('seed') || undefined);
+</script>
+</body>
+</html>
