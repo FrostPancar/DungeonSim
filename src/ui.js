@@ -48,7 +48,7 @@ import {
   raiseCost, raiseDead, festivalCost, festival, trainCost, paidTraining, RUMOUR_COST, buyRumour, ERRANDS, journeyDays, errandCost,
   sendJourney, tradingPostLevel, setOrder, UPGRADES, levelOf, upgradeCost, upgradeBlocker, orderUpgrade, cancelUpgrade, MAX_LEVEL,
   FORGE_COST, forgeCost, forgeBlocker, forgeTier, merchantStock, merchantBuy, merchantSellPacks, merchantReforge, robMerchant,
-  reforgeCost, MAP_PRICE, KEY_PRICE,
+  reforgeCost, MAP_PRICE, KEY_PRICE, KEPT_SHOPS, keeperOf, keptNow, assignKeeper, shopStatus,
 } from './economy.js';
 
 // ------------------------------------------------------------ save slots --
@@ -817,55 +817,119 @@ export class UI {
   /** A right-click tap: work whatever's on the tile if anything is, else walk
    *  the selected squad there. */
   rightClickAt(x, y) {
-    const g = this.mv, m = g._m;
+    const g = this.mv, m = g._m, w = g.world;
     // Only people on this map can be sent anywhere on it.
     const ids = [...this.squad].filter(id => { const c = g.colonists.find(k => k.id === id); return c && (c.mapId || 0) === m.id; });
     const n = ids.length;
-    const who = n === 1 ? g.colonists.find(c => c.id === ids[0]).name.short : `${n} people`;
     if (!n) { this.orderInteract(x, y); return; }
+    const who = n === 1 ? g.colonists.find(c => c.id === ids[0]).name.short : `${n} people`;
+    const opts = [];
+    const add = (icon, label, run, kind = '') => opts.push({ icon, label, run, kind });
+
     // The way down (the gate, or a floor's stairs) and the way up.
     const way = this.stairsAt(x, y);
     if (way) {
-      if (way === 'down' && m.kind === 'camp' && !g.canEnterRift) { this.flash('The Rift is open and spewing — nobody goes in until dawn.', 'warn'); return; }
-      if (way === 'down' && m.kind === 'floor' && m.depth >= g.floorCount) { this.flash('This is the bottom of the Rift today.', 'warn'); return; }
-      this.game.orderTravel(ids, way);
       const where = way === 'up' ? (m.depth === 1 ? 'back to camp' : `up to floor ${m.depth - 1}`) : m.kind === 'camp' ? 'into the Rift' : `down to floor ${m.depth + 1}`;
-      this.flash(`${who} ${n === 1 ? 'heads' : 'head'} ${where}`, 'good');
-      return;
+      add(way === 'up' ? '⬆️' : '🌀', where[0].toUpperCase() + where.slice(1), () => {
+        if (way === 'down' && m.kind === 'camp' && !g.canEnterRift) { this.flash('The Rift is open and spewing — nobody goes in until dawn.', 'warn'); return; }
+        if (way === 'down' && m.kind === 'floor' && m.depth >= g.floorCount) { this.flash('This is the bottom of the Rift today.', 'warn'); return; }
+        this.game.orderTravel(ids, way);
+        this.flash(`${who} ${n === 1 ? 'heads' : 'head'} ${where}`, 'good');
+      }, 'good');
     }
     // One of ours down on the ground: the nearest of the selection carries them out.
     const hurt = g.here.find(c => c.downed && !c.carriedBy && c.x === x && c.y === y);
-    if (hurt) {
+    if (hurt) add('🩹', `Carry ${hurt.name.short} to safety`, () => {
       const r = this.game.orderRescue(ids, hurt.id);
       this.flash(r ? `${r.name.short} goes to carry ${hurt.name.short} to safety` : `Nobody selected can carry ${hurt.name.short}`, r ? 'good' : 'warn');
-      return;
-    }
-    // One of our war or pack beasts: it takes the (first) selected as its handler.
-    const pet = g.beasts.find(b => !b.dead && b.tame && b.x === x && b.y === y);
-    if (pet && canFollow(pet)) {
+    }, 'good');
+    // A friend standing there (not one of the selection): walk over and trade places.
+    const friend = g.here.find(c => !c.downed && !c.dead && !ids.includes(c.id) && c.x === x && c.y === y);
+    if (friend && n === 1) add('🔄', `Swap places with ${friend.name.short}`, () => { g.orderMove(ids, x, y); this.flash(`${who} swaps places with ${friend.name.short}`, 'info'); });
+    // Beasts: ours can be given a handler or slaughtered; wild ones tamed or hunted.
+    const beast = g.beasts.find(b => !b.dead && b.x === x && b.y === y);
+    if (beast && beast.tame) {
       const lead = g.colonists.find(c => c.id === ids[0]);
-      const same = pet.handler === lead.id;
-      this.game.setHandler(pet.id, same ? null : lead.id);
-      this.flash(same ? `${pet.name} no longer follows ${lead.name.short}` : `${pet.name} now follows ${lead.name.short}`, 'good');
-      this.sigs.insp = null;
-      return;
+      if (canFollow(beast)) {
+        const same = beast.handler === lead.id;
+        add('🦮', same ? `${beast.name} stops following ${lead.name.short}` : `${beast.name} follows ${lead.name.short}`, () => {
+          this.game.setHandler(beast.id, same ? null : lead.id);
+          this.flash(same ? `${beast.name} no longer follows ${lead.name.short}` : `${beast.name} now follows ${lead.name.short}`, 'good');
+          this.sigs.insp = null;
+        });
+      }
+      add('🔪', beast.markedButcher ? `Spare ${beast.name}` : `Mark ${beast.name} for slaughter`, () => { this.game.markButcher(beast.id); this.sigs.insp = null; }, 'danger');
+    } else if (beast) {
+      const A = ANIMALS[beast.species];
+      add('🤝', `Tame the ${A.name}${A.wildAggressive ? ' (dangerous)' : ''}`, () => {
+        const c = this.game.orderTame(ids, beast.id);
+        this.flash(c ? `${c.name.short} tries to tame the ${A.name}` : 'Nobody free to do it', c ? 'good' : 'warn');
+      }, 'good');
+      add('⚔️', `Hunt the ${A.name}`, () => {
+        const k = this.game.orderHunt(ids, beast.id);
+        this.flash(k ? `${who} ${n === 1 ? 'hunts' : 'hunt'} the ${A.name}` : 'Nobody free to do it', k ? 'warn' : 'info');
+      }, 'danger');
     }
-    // An enemy: the squad closes on it together, which is what starts a fight.
+    // Someone else's people: talk to the neutral ones, fight anyone.
     const r = g.raiders.find(r => r.hp > 0 && r.x === x && r.y === y);
-    if (r && r.neutral) { this.sel = { kind: 'enemy', id: r.id, ref: r }; this.sigs.insp = null; this.renderInspector(); return; }
-    if (r) { g.orderAttack(ids, r.id); this.flash(`${who} ${n === 1 ? 'attacks' : 'attack'} ${r.name.short}`, 'warn'); return; }
+    if (r && r.neutral) add('💬', `Talk to ${r.name.short}`, () => { this.sel = { kind: 'enemy', id: r.id, ref: r }; this.sigs.insp = null; this.renderInspector(); }, 'good');
+    if (r) add('⚔️', `Attack ${r.name.short}${r.neutral ? ' (they are neutral)' : ''}`, () => { g.orderAttack(ids, r.id); this.flash(`${who} ${n === 1 ? 'attacks' : 'attack'} ${r.name.short}`, 'warn'); }, 'danger');
     // Something workable: everyone takes a side of it and works it at once.
     const job = g.siteJobAt(x, y);
-    if (job && g.orderWork(ids, x, y)) {
-      this.renderer.cacheVersion = -1;
-      const f = g.world.feature[g.world.idx(x, y)];
-      const verb = job.kind === 'harvest' && f && FEATURES[f].prop ? 'opening the ' + FEATURES[f].name.toLowerCase()
-        : { mine: 'mining', harvest: 'harvesting', build: 'building', floor: 'laying floor' }[job.kind];
-      this.flash(`${who} ${verb}${n > 1 ? ` together · ×${n} speed` : ''}`, 'good');
-      return;
+    if (job) {
+      const f = w.feature[w.idx(x, y)];
+      const label = job.kind === 'harvest' && f && FEATURES[f].prop ? `Open the ${FEATURES[f].name.toLowerCase()}`
+        : job.kind === 'harvest' ? `${f === 'tree' ? 'Chop' : 'Harvest'} ${f && FEATURES[f] ? FEATURES[f].name.toLowerCase() : ''}`.trim()
+          : { mine: 'Mine', build: 'Build', floor: 'Lay the floor' }[job.kind];
+      add({ mine: '⛏️', harvest: f === 'tree' ? '🪓' : '🌿', build: '🔨', floor: '🧱' }[job.kind], `${label}${n > 1 ? ` together (×${n})` : ''}`, () => {
+        if (!g.orderWork(ids, x, y)) { this.flash('Nobody can get at it', 'warn'); return; }
+        this.renderer.cacheVersion = -1;
+        this.flash(`${who}: ${label.toLowerCase()}`, 'good');
+      }, 'good');
     }
-    g.orderMove(ids, x, y);
-    this.flash(`Moving ${n === 1 ? who : n + ' people'}`, 'info');
+    // A shop with an empty counter: put the selected person behind it.
+    const bd = w.inside(x, y) ? w.building[w.idx(x, y)] : null;
+    if (bd && bd.done && KEPT_SHOPS.has(bd.id) && n === 1) {
+      const c = g.colonists.find(k => k.id === ids[0]);
+      if (bd.keeper !== c.id) add('🧑‍💼', `${c.name.short} keeps the ${BUILDINGS[bd.id].name}`, () => { assignKeeper(g, bd, c.id); this.sigs.insp = null; this.renderInspector(); }, 'good');
+    }
+    if (w.walkable(x, y)) add('👣', `Move ${n === 1 ? who : n + ' people'} here`, () => { g.orderMove(ids, x, y); this.flash(`Moving ${n === 1 ? who : n + ' people'}`, 'info'); });
+    else if (!opts.length) add('👣', 'Move as close as they can', () => { g.orderMove(ids, x, y); this.flash(`Moving ${n === 1 ? who : n + ' people'}`, 'info'); });
+
+    // Plain ground is just a move; anything more gets the menu.
+    if (opts.length === 1) { opts[0].run(); return; }
+    this.showCtxMenu(opts);
+  }
+
+  /** The right-click menu: every way the selection can interact with the tile. */
+  showCtxMenu(opts) {
+    let box = $('#ctxmenu');
+    if (!box) {
+      box = el('div', 'ctxmenu');
+      box.id = 'ctxmenu';
+      document.body.appendChild(box);
+      const close = (e) => { if (!box.classList.contains('hidden') && !(e.target && e.target.closest && e.target.closest('#ctxmenu'))) box.classList.add('hidden'); };
+      addEventListener('mousedown', close, true);
+      // Esc closes it; 1-9 picks an option (ahead of the game's own hotkeys).
+      addEventListener('keydown', (e) => {
+        if (box.classList.contains('hidden')) return;
+        const k = +e.key;
+        if (e.key === 'Escape') { box.classList.add('hidden'); e.stopPropagation(); return; }
+        if (k >= 1 && this.ctxOpts && this.ctxOpts[k - 1]) { e.preventDefault(); e.stopPropagation(); box.classList.add('hidden'); this.ctxOpts[k - 1].run(); }
+      }, true);
+    }
+    box.innerHTML = '';
+    opts.forEach((o, i) => {
+      const b = el('button', 'cm-it' + (o.kind ? ' ' + o.kind : ''), `<span class="cm-ic">${o.icon}</span><span>${esc(o.label)}</span><kbd>${i + 1}</kbd>`);
+      b.onclick = () => { box.classList.add('hidden'); o.run(); };
+      box.appendChild(b);
+    });
+    this.ctxOpts = opts;
+    box.classList.remove('hidden');
+    const mx = (this.mouse && this.mouse.x) || innerWidth / 2, my = (this.mouse && this.mouse.y) || innerHeight / 2;
+    const r = box.getBoundingClientRect();
+    box.style.left = `${Math.min(mx + 4, innerWidth - r.width - 8)}px`;
+    box.style.top = `${Math.min(my + 4, innerHeight - r.height - 8)}px`;
   }
 
   /** 'down' on the camp's Rift Gate or a floor's stairs down, 'up' on stairs up, else null. */
@@ -1179,7 +1243,7 @@ export class UI {
       const g = this.game;
       if (!this.paused && !g.gameOver) {
         this.tickAcc += dt * TICKS_PER_SEC * (mult[this.speed] ?? 1);
-        while (this.tickAcc >= 1) { this.tickAcc -= 1; if (this.auto) autoplayStep(g); g.step(); }
+        while (this.tickAcc >= 1) { this.tickAcc -= 1; if (this.auto) autoplayStep(g, { build: false }); g.step(); }
         this.updateVisitors(dt);
       }
       // Autosave with the sunrise; and, if asked, stop the clock when a fight breaks out.
@@ -1248,6 +1312,7 @@ export class UI {
       }).join('');
     }
 
+    this.renderResearchChip();
     this.renderColbar();
     this.renderMapTabs();
     this.renderFightLog();
@@ -1269,6 +1334,27 @@ export class UI {
     if (hb) { hb.classList.toggle('on', this.hoverInfo); hb.title = `Hover info: ${this.hoverInfo ? 'on' : 'off'} — the cards that follow the pointer over the map`; }
   }
 
+  /** What's being researched, beside the resources: name, a progress bar, what's queued next. */
+  renderResearchChip() {
+    const box = $('#rsch');
+    if (!box) return;
+    const g = this.game, R = g.research, cur = R.current, def = cur && g.researchDefs[cur];
+    const pct = def ? Math.min(100, Math.floor((R.progress / def.cost) * 100)) : 0;
+    const sig = `${cur}|${pct}|${R.queue.length}`;
+    if (this.sigs.rsch !== sig) {
+      this.sigs.rsch = sig;
+      box.classList.toggle('none', !def);
+      box.innerHTML = def
+        ? `<div class="rs-h"><span class="rs-i">🔬</span><b>${esc(def.name)}</b><span class="rs-p">${pct}%</span></div>
+           <u><s style="width:${pct}%"></s></u>${R.queue.length ? `<div class="rs-q">then ${esc(g.researchDefs[R.queue[0]].name)}${R.queue.length > 1 ? ` +${R.queue.length - 1}` : ''}</div>` : ''}`
+        : `<div class="rs-h"><span class="rs-i">🔬</span><b>No research</b></div><div class="rs-q">Click to choose a project</div>`;
+      if (!box.onclick) box.onclick = () => this.openDrawer('research');
+    }
+    // Sit just right of the resource readout, whatever its width.
+    const res = $('#res');
+    if (res) box.style.left = `${res.offsetLeft + res.offsetWidth + 6}px`;
+  }
+
   /**
    * RimWorld's colonist bar: one portrait per colonist along the top. The box
    * fills from the bottom with mood, a red sliver on the left is lost health,
@@ -1280,7 +1366,14 @@ export class UI {
     const sig = cs.map(c => `${c.id}:${Math.round(c.mood / 4)}:${Math.round(c.hp / c.maxHp * 10)}:${c.away ? 1 : 0}:${labourOf(c)}:${this.squad.has(c.id) ? 1 : 0}:${c.mapId || 0}:${c.hold ? 1 : 0}:${c.downed ? 1 : 0}`).join('|');
     if (this.sigs.colbar === sig) return;
     this.sigs.colbar = sig;
-    $('#colbar').innerHTML = cs.map(c => {
+    const bar = $('#colbar');
+    if (!bar.dataset.hov) {
+      // Hovering a portrait lights that colonist up on the map.
+      bar.dataset.hov = '1';
+      bar.addEventListener('mouseover', (e) => { const cb = e.target.closest && e.target.closest('.cb'); this.renderer.barHover = cb ? +cb.dataset.id : null; });
+      bar.addEventListener('mouseleave', () => { this.renderer.barHover = null; });
+    }
+    bar.innerHTML = cs.map(c => {
       const m = moodStatus(c.mood);
       const lost = 1 - c.hp / c.maxHp;
       return `<div class="cb${this.squad.has(c.id) ? ' sel' : ''}${c.away ? ' away' : ''}${c.mood < 20 && !c.away ? ' brk' : ''}"
@@ -2692,7 +2785,15 @@ export class UI {
     const shopHead = (id, name, icon, every) => {
       const lv = builtLevel(g, id);
       const days = S[id] ? Math.max(0, every - (g.day - S[id].day)) : 0;
-      return sect(`${icon} ${name} <span class="lvl">L${lv}</span>`, S[id] ? `restocks in ${days || 1} day${days === 1 ? '' : 's'}` : 'stocks at dawn');
+      const st = shopStatus(g, id);
+      const head = sect(`${icon} ${name} <span class="lvl">L${lv}</span>${st.open ? ' <span class="badge good">Open</span>' : ' <span class="badge bad">Shut</span>'}`,
+        S[id] ? `restocks in ${days || 1} day${days === 1 ? '' : 's'}` : 'stocks at dawn');
+      if (st.open) return head;
+      // A shut counter still shows its shelves, so you know what's waiting.
+      const box = el('div');
+      box.appendChild(head);
+      box.appendChild(el('div', 'mini shop-desc shop-shut', `🔴 ${esc(st.why)}`));
+      return box;
     };
     if (builtLevel(g, 'armory')) {
       wrap.appendChild(shopHead('armory', 'Armory', '🛡️', 5));
@@ -3520,6 +3621,23 @@ export class UI {
         btn.onclick = () => { const r = orderUpgrade(g, x, y); if (r) this.toast(r, 'warn'); this.sigs.insp = null; this.renderInspector(); };
         box.appendChild(btn);
       }
+    }
+    if (bd && bd.done && KEPT_SHOPS.has(bd.id)) {
+      // Nobody behind the counter, no trade: pick who keeps it.
+      const keeper = keeperOf(g.root, bd), open = keptNow(g.root, bd);
+      box.appendChild(el('div', 'sect', 'Shopkeeper'));
+      const row = el('label', 'row handler');
+      row.innerHTML = `<span class="k">🧑‍💼 Keeper</span>`;
+      const sel = document.createElement('select');
+      sel.innerHTML = `<option value="">Nobody — the shop stays shut</option>`
+        + g.root.colonists.filter(c => !c.dead).map(c => `<option value="${c.id}"${bd.keeper === c.id ? ' selected' : ''}>${esc(c.name.short)} · ${esc(c.title || CLASSES[c.klass].name)}</option>`).join('');
+      sel.onchange = () => { assignKeeper(g, bd, sel.value ? +sel.value : null); this.sigs.insp = null; this.renderInspector(); this.sigs.drawer = null; this.renderDrawer(); };
+      row.appendChild(sel);
+      box.appendChild(row);
+      box.appendChild(el('div', 'mini', !keeper
+        ? 'Shut. Assign a keeper and they’ll mind the counter through the day; the shop trades only while they’re there.'
+        : open ? `🟢 Open — ${esc(keeper.name.short)} is at the counter.`
+          : `🔴 Shut — ${g.root.isNight ? 'closed for the night.' : `waiting for ${esc(keeper.name.short)} to get to the counter.`}`));
     }
     if (bd && bd.done && (BUILDINGS[bd.id].shop || bd.id === 'tavern' || bd.id === 'temple')) {
       add(BUILDINGS[bd.id].shop === 'trading_post' || BUILDINGS[bd.id].shop === 'counting_house' || bd.id === 'tavern' || bd.id === 'temple' ? '🪙 Services' : '🪙 Open the Market',

@@ -619,6 +619,11 @@ function assignTask(game, npc) {
   }
   // 1c. Holding position: they stay on their spot and keep watch.
   if (npc.hold) { npc.task = { kind: 'wander', x: npc.x, y: npc.y, work: 30, hold: true }; return; }
+  // 1d. A shopkeeper minds their counter through the day, at the shop's door.
+  if (!game.isNight && game._m.kind === 'camp' && !npc.away) {
+    const shop = game.world.findBuildings().find(r => r.b.keeper === npc.id);
+    if (shop) { npc.task = { kind: 'shopkeep', x: shop.x, y: shop.y, work: 240, skill: 'social' }; return; }
+  }
   // 2. Work jobs, scored by priority then distance.
   let best = null, bestScore = -Infinity;
   for (const job of game.jobs) {
@@ -639,6 +644,8 @@ function assignTask(game, npc) {
     if (score > bestScore) { bestScore = score; best = job; }
   }
   if (best) { best.claim = npc.id; npc.task = { ...best, workLeft: best.work }; return; }
+  // 2b. Nothing queued: they find something useful on their own.
+  if (game._m.kind === 'camp' && selfDirect(game, npc)) return;
   // 3. Nothing to do: socialise or wander.
   if (game.tick % 7 === 0) {
     const others = game.here.filter(c => c !== npc && !c.away && !c.dead && Math.hypot(c.x - npc.x, c.y - npc.y) < 12);
@@ -651,6 +658,55 @@ function assignTask(game, npc) {
   addThought(npc, 'idle');
   const spot = findNearest(game.world, npc.x, npc.y, (x, y) => game.world.walkable(x, y) && (x + y) % 3 === game.tick % 3, 8);
   npc.task = { kind: 'wander', x: spot ? spot[0] : npc.x, y: spot ? spot[1] : npc.y, work: 12 };
+}
+
+// Ticks a colonist spends per tile on plain ground (was 2.4: everyone walks ~15% quicker now).
+export const MOVE_TICKS = 2.05;
+
+/**
+ * A colonist with no job looks for the most useful thing within reach: what
+ * the colony is shortest of (wood, food, stone, ore), nearest first, within
+ * what their work priorities allow. They mark it the way a player would, so
+ * others can pitch in. Building stays the player's call: nobody starts one.
+ */
+function selfDirect(game, npc) {
+  if ((npc.selfCd || 0) > game.tick) return false;
+  npc.selfCd = game.tick + 30;   // an empty search isn't repeated every tick
+  const w = game.world, res = game.resources, cap = storageCap(game);
+  const pr = (k) => npc.priorities[k] ?? 2;
+  const chop = pr('chop') > 0, mine = pr('mine') > 0;
+  const eaters = Math.max(1, game.colonists.filter(c => !c.dead).length);
+  const want = {
+    tree: chop && (res.wood || 0) < cap * 0.7,
+    fungus: chop && (res.food || 0) + (res.meal || 0) < eaters * 12,
+    herb: chop && (res.herbs || 0) < 30,
+    rock: mine && (res.stone || 0) < cap * 0.5,
+    vein: mine,
+  };
+  if (!Object.values(want).some(Boolean)) return false;
+  const exposed = (x, y) => w.walkable(x + 1, y) || w.walkable(x - 1, y) || w.walkable(x, y + 1) || w.walkable(x, y - 1);
+  const spot = findNearest(w, npc.x, npc.y, (x, y) => {
+    const i = w.idx(x, y);
+    if (w.designation[i] || w.building[i]) return false;
+    const bad = game.unreachable.get(`${x},${y}`);
+    if (bad && bad > game.tick) return false;
+    const f = w.feature[i];
+    if (f && FEATURES[f].inRock) return want.vein && exposed(x, y);
+    if (f === 'tree') return want.tree;
+    if (f === 'fungus' || f === 'glowcap') return want.fungus;
+    if (f === 'herb') return want.herb;
+    if (!f && TERRAIN[w.terrain[i]].mineable && w.terrain[i] !== T.RIFT) return want.rock && exposed(x, y);
+    return false;
+  }, 20);
+  if (!spot) return false;
+  const [x, y] = spot, i = w.idx(x, y), f = w.feature[i];
+  const kind = (f && !FEATURES[f].inRock) ? 'harvest' : 'mine';
+  if (!designate(game, x, y, kind)) return false;
+  const job = siteJobAt(game, x, y);
+  if (!job) return false;
+  npc.task = { kind: job.kind, x, y, work: job.work, skill: job.skill, claim: npc.id, self: true };
+  npc.task.workLeft = siteWorkLeft(game, job.kind, x, y, job.work);
+  return true;
 }
 
 // --- movement ---------------------------------------------------------------
@@ -676,7 +732,7 @@ function stepToward(game, npc, tx, ty, adjacent) {
   if (!occupyMove(game, npc, next[0], next[1])) return blockedStep(game, npc, next, tx, ty, adjacent);
   npc.blocked = 0;
   npc.pathIdx++;
-  npc.moveCd += 2.4 * game.world.moveCost(npc.x, npc.y);
+  npc.moveCd += MOVE_TICKS * game.world.moveCost(npc.x, npc.y);
   return npc.pathIdx >= npc.path.length;
 }
 
@@ -713,6 +769,28 @@ function blockedStep(game, npc, next, tx, ty, adjacent) {
     }
     // Eating, hauling, wandering: arm's length is close enough.
     if (Math.abs(npc.x - tx) <= 1 && Math.abs(npc.y - ty) <= 1) { npc.blocked = 0; return true; }
+  }
+  // A friend in the way: trade places with them when that's the quicker way
+  // through — they're standing still, or walking straight at us — rather than
+  // queueing behind them or walking the long way round.
+  const friend = other && other !== npc && game.colonists.includes(other) && (other.mapId || 0) === (npc.mapId || 0)
+    && !other.dead && !other.downed && !other.carriedBy && !npc.carriedBy && other.state !== 'sleeping' && !(game.field && game.field.units && game.field.units.has(other));
+  if (friend && !(lastStep && !adjacent)) {
+    const theirNext = other.path && other.path[other.pathIdx];
+    const headOn = !!theirNext && theirNext[0] === npc.x && theirNext[1] === npc.y;
+    const standing = other.state !== 'moving';
+    if (headOn || standing || npc.blocked >= 3) {
+      // Is walking round them just as quick? Then go round and leave them be.
+      const left = npc.path.length - npc.pathIdx;
+      const round = headOn ? null : findPath(game.world, npc.x, npc.y, tx, ty, adjacent, 300, game.occ);
+      if (round && round.length && round.length <= left) { npc.path = round; npc.pathIdx = 0; return false; }
+      const path = npc.path, idx = npc.pathIdx;
+      swapUnits(game, npc, other);
+      npc.path = path; npc.pathIdx = idx + 1;   // we carry on; they re-plan from where we were
+      npc.blocked = 0;
+      npc.moveCd += MOVE_TICKS * game.world.moveCost(npc.x, npc.y);
+      return npc.pathIdx >= npc.path.length;
+    }
   }
   if (npc.blocked >= 3 && npc.blocked % (adjacent ? 6 : 3) === 0) {
     // A way round the bodies is close by or not worth the search.
@@ -1009,10 +1087,10 @@ function doTask(game, npc) {
     if (!beast || beast.dead) { npc.task = null; return; }
     // An animal that won't hold still is let go after a while.
     t.chase = (t.chase || 0) + 1;
-    if (t.chase > 400) { npc.task = null; return; }
+    if (t.chase > (t.kind === 'hunt' ? 1500 : 400)) { npc.task = null; return; }
     if (beast.x !== t.x || beast.y !== t.y) { t.x = beast.x; t.y = beast.y; npc.path = null; }
   }
-  const adjacentKinds = { travel: 1, mine: 1, harvest: 1, build: 1, floor: 1, plant: 1, farmTend: 1, farmHarvest: 1, compost: 1, craft: 1, research: 1, train: 1, pray: 1, heal: 1, joy: 1, socialize: 1, tame: 1, gather: 1, butcher: 1 };
+  const adjacentKinds = { travel: 1, mine: 1, harvest: 1, build: 1, floor: 1, plant: 1, farmTend: 1, farmHarvest: 1, compost: 1, craft: 1, research: 1, train: 1, pray: 1, heal: 1, joy: 1, socialize: 1, tame: 1, gather: 1, butcher: 1, shopkeep: 1, hunt: 1 };
   if (t.kind === 'fight') { doFight(game, npc, t); return; }
   if (t.kind === 'rescue') { doRescue(game, npc, t); return; }
   const needAdjacent = !!adjacentKinds[t.kind];
@@ -1034,7 +1112,20 @@ function doTask(game, npc) {
     else if (t.night && npc.order) { npc.task = null; }   // woken by an order
     return;
   }
+  if (t.kind === 'hunt') {
+    // A strike every few beats until it drops; see huntStrike.
+    npc.state = 'fighting';
+    t.workLeft = (t.workLeft ?? t.work) - 1;
+    if (t.workLeft <= 0) { t.workLeft = t.work; huntStrike(game, npc, t); }
+    return;
+  }
   npc.state = 'working';
+  if (t.kind === 'shopkeep') {
+    // Open for as long as they stand there, and a little after (a shift change, a step away).
+    const b = game.world.inside(t.x, t.y) ? game.world.building[game.world.idx(t.x, t.y)] : null;
+    if (!b || !b.done || b.keeper !== npc.id || game.isNight) { npc.task = null; npc.state = 'idle'; return; }
+    b.keptUntil = game.tick + 120;
+  }
   const skill = t.skill || (t.kind === 'eat' ? 'survival' : 'social');
   const rate = workRate(game, npc, skill);
   if (WORK_SITE_KINDS[t.kind]) {
@@ -1052,6 +1143,29 @@ function doTask(game, npc) {
   }
   if (t.skill) gainXp(game, npc, t.skill, rate * 0.85);
   if (t.workLeft <= 0) completeTask(game, npc);
+}
+
+/** One blow at a hunted beast. It dies into meat and hide; a dangerous one hits back. */
+function huntStrike(game, npc, t) {
+  const b = game.beasts.find(k => k.id === t.beastId);
+  if (!b || b.dead) { npc.task = null; return; }
+  const A = ANIMALS[b.species], rng = game.rng;
+  const dmg = Math.max(1, rng.int(2, 6) + Math.round((npc.skills.melee || 0) * 0.6) - (A.armor || 0));
+  b.hp = (b.hp ?? A.hp) - dmg;
+  gainXp(game, npc, 'melee', 25);
+  if (b.hp <= 0) {
+    b.dead = true;
+    dropItems(game, b.x, b.y, butcherBeast(game, b));
+    game.log(`${npc.name.short} brings down ${b.name} the ${A.name}.`, 'good', npc.id);
+    for (const c of game.colonists) if (c.task && c.task.kind === 'hunt' && c.task.beastId === b.id) c.task = null;
+    game.jobsDirty = true;
+    return;
+  }
+  if (rng.chance(A.wildAggressive ? 0.5 : 0.15)) {
+    const hit = rng.int(1, 3 + A.power);
+    npc.hp = Math.max(1, npc.hp - hit);
+    if (hit >= 5) addThought(npc, 'wounded');
+  }
 }
 
 /**

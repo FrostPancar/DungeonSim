@@ -1005,6 +1005,9 @@ const WALL_PAL = {
 };
 const BLANKETS = ['#8e3b3b', '#3b5f8e', '#4f7a45', '#8a6a2e', '#6b4a7a', '#7a5a45'];
 
+// Shops that need a keeper behind the counter (economy.js KEPT_SHOPS).
+const KEPT_SHOP_IDS = new Set(['armory', 'apothecary', 'stable', 'tavern', 'spellmason']);
+
 // Roofs by what a building is: shops red tile, schools slate, holy places pale
 // stone with gold, farm buildings barn red, workshops and study green.
 function roofOf(id, def) {
@@ -2299,7 +2302,7 @@ export class Renderer {
       this.atlas.draw(ctx, icon, cx, cy, this.tile * (def.walled ? 0.42 : 0.6));
     }
     // A shop with nobody behind the counter says so.
-    if (b.shopClosed) {
+    if (KEPT_SHOP_IDS.has(b.id) && !((b.keptUntil || 0) >= this.game.tick)) {
       const cx = sx + (door[0] + 0.5) * this.tile, cy = sy + (door[1] + 0.62) * this.tile;
       ctx.font = `bold ${Math.max(8, this.tile * 0.2)}px ${UI_FONT}`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -2840,7 +2843,9 @@ export class Renderer {
   trackHover(list) {
     const hv = this.hover && !this.dragRect ? this.hover : null;
     let hot = null;
-    if (hv) for (const k of ['colonist', 'enemy', 'beast']) {
+    // A portrait hovered in the colonist bar picks its colonist out.
+    if (this.barHover != null) { const e = list.find(e => e.kind === 'colonist' && e.u.id === this.barHover); if (e) hot = e; }
+    if (hv && !hot) for (const k of ['colonist', 'enemy', 'beast']) {
       hot = list.find(e => e.kind === k && e.u.x === hv[0] && e.u.y === hv[1]);
       if (hot) break;
     }
@@ -3209,6 +3214,30 @@ export class Renderer {
       ctx.fillStyle = '#ffffff';
       ctx.fillText(label, ax + 5, ay - 3);
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    }
+    // The colonist whose portrait is hovered in the top bar: a pulsing ring, and
+    // an arrow at the screen edge if they're off it.
+    if (this.barHover != null) {
+      const c = this.game.colonists.find(k => k.id === this.barHover && !k.dead && !k.away && (k.mapId || 0) === (this.game._m ? this.game._m.id : 0));
+      if (c) {
+        const mo = this.motion && this.motion.get(c);
+        const ux = mo && mo.x != null ? mo.x : c.x, uy = mo && mo.y != null ? mo.y : c.y;
+        const [cx, cy] = this.worldToScreen(ux + 0.5, uy + 0.5);
+        const pulse = 0.5 + 0.5 * Math.sin(this.now * 6);
+        const inView = cx > 0 && cy > 0 && cx < this.viewW && cy < this.viewH;
+        if (inView) {
+          ctx.strokeStyle = `rgba(238,196,92,${0.65 + pulse * 0.35})`; ctx.lineWidth = 2.5;
+          ctx.beginPath(); ctx.arc(cx, cy, t * (0.62 + pulse * 0.1), 0, Math.PI * 2); ctx.stroke();
+          ctx.fillStyle = 'rgba(238,196,92,0.12)';
+          ctx.beginPath(); ctx.arc(cx, cy, t * 0.62, 0, Math.PI * 2); ctx.fill();
+        } else {
+          const ex = Math.max(18, Math.min(this.viewW - 18, cx)), ey = Math.max(18, Math.min(this.viewH - 18, cy));
+          const a = Math.atan2(cy - ey, cx - ex);
+          ctx.save(); ctx.translate(ex, ey); ctx.rotate(a);
+          ctx.fillStyle = '#eec45c'; ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-7, -8); ctx.lineTo(-7, 8); ctx.closePath(); ctx.fill();
+          ctx.restore();
+        }
+      }
     }
     // Build mode: the footprint of what would go down, green where it fits, red where it doesn't.
     if (this.ghostId && this.hover && !this.dragRect) {

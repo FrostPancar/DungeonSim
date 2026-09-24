@@ -264,7 +264,7 @@ export function tickBeasts(game) {
     if (b.heeling || b.downed) continue;
     b.moveCd -= 1;
     if (b.moveCd <= 0) {
-      b.moveCd = rng.int(2, 6);
+      b.moveCd = rng.int(2, 5);
       let ax = b.x, ay = b.y;
       if (b.tame && pastures.length) {
         const home = pastures.reduce((best, p) => {

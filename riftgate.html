@@ -127,6 +127,17 @@ button.act.big{min-height:38px;padding:6px 20px;font-size:14px;margin:0}
 #res{position:absolute;left:6px;top:6px;z-index:20;display:flex;flex-direction:column;padding:4px 0;
   background:rgba(12,14,17,.74);border:1px solid rgba(255,255,255,.07);border-radius:var(--r2);
   -webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);pointer-events:auto;user-select:none}
+#rsch{position:absolute;left:120px;top:6px;z-index:20;min-width:150px;max-width:220px;padding:6px 9px 7px;
+  background:rgba(12,14,17,.74);border:1px solid rgba(255,255,255,.07);border-radius:var(--r2);cursor:var(--cur-hand);
+  -webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);pointer-events:auto;user-select:none;font-size:12px}
+#rsch:hover{border-color:rgba(255,255,255,.18)}
+#rsch.none{border-color:rgba(232,179,71,.5)}
+#rsch .rs-h{display:flex;align-items:center;gap:6px}
+#rsch .rs-h b{flex:1;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#rsch .rs-p{font-variant-numeric:tabular-nums;color:var(--hi)}
+#rsch u{display:block;height:4px;margin-top:5px;border-radius:2px;background:rgba(255,255,255,.08);overflow:hidden;text-decoration:none}
+#rsch u s{display:block;height:100%;background:#7aa8e0;text-decoration:none}
+#rsch .rs-q{margin-top:4px;font-size:11px;color:var(--ink2,#9aa3ad)}
 .rr{display:flex;align-items:center;gap:7px;padding:1px 9px 1px 6px;min-width:100px;font-variant-numeric:tabular-nums;cursor:var(--cur-arrow)}
 .rr:hover{background:var(--s3)}
 .rr .ci{width:18px;text-align:center;font-size:13px}
@@ -1295,6 +1306,19 @@ button.act.small{min-height:22px;padding:1px 7px;font-size:11.5px;margin:0}
 .lvl-pips{color:var(--hi);letter-spacing:1px}
 .need{color:var(--warn)}
 
+/* Right-click menu: every way the selection can deal with what was clicked. */
+.ctxmenu{position:fixed;z-index:80;min-width:200px;max-width:300px;padding:4px;display:flex;flex-direction:column;gap:1px;
+  background:rgba(18,21,25,.97);border:1px solid rgba(255,255,255,.12);border-radius:var(--r2);box-shadow:0 8px 24px rgba(0,0,0,.55)}
+.ctxmenu.hidden{display:none}
+.ctxmenu .cm-it{display:flex;align-items:center;gap:8px;padding:6px 8px;border:0;border-radius:6px;background:transparent;color:var(--ink);
+  font:inherit;font-size:12.5px;text-align:left;cursor:var(--cur-hand)}
+.ctxmenu .cm-it:hover{background:var(--s3)}
+.ctxmenu .cm-it span:nth-child(2){flex:1}
+.ctxmenu .cm-ic{width:18px;text-align:center}
+.ctxmenu .cm-it.good span:nth-child(2){color:#c3eab6}
+.ctxmenu .cm-it.danger span:nth-child(2){color:#ffb9ab}
+.ctxmenu kbd{font:10px ui-monospace,monospace;color:var(--ink2,#9aa3ad);border:1px solid rgba(255,255,255,.15);border-radius:3px;padding:0 4px}
+
 </style>
 </head>
 <body>
@@ -1302,6 +1326,7 @@ button.act.small{min-height:22px;padding:1px 7px;font-size:11.5px;margin:0}
   <canvas id="map"></canvas>
 
   <div id="res"></div>
+  <div id="rsch" data-tipt="Research — click to open the tech tree"></div>
   <div id="colbar"></div>
   <div id="fightlog" class="hidden"></div>
   <div id="toasts"></div>
@@ -5396,7 +5421,7 @@ function tickBeasts(game) {
     if (b.heeling || b.downed) continue;
     b.moveCd -= 1;
     if (b.moveCd <= 0) {
-      b.moveCd = rng.int(2, 6);
+      b.moveCd = rng.int(2, 5);
       let ax = b.x, ay = b.y;
       if (b.tame && pastures.length) {
         const home = pastures.reduce((best, p) => {
@@ -10288,6 +10313,11 @@ function assignTask(game, npc) {
   }
   // 1c. Holding position: they stay on their spot and keep watch.
   if (npc.hold) { npc.task = { kind: 'wander', x: npc.x, y: npc.y, work: 30, hold: true }; return; }
+  // 1d. A shopkeeper minds their counter through the day, at the shop's door.
+  if (!game.isNight && game._m.kind === 'camp' && !npc.away) {
+    const shop = game.world.findBuildings().find(r => r.b.keeper === npc.id);
+    if (shop) { npc.task = { kind: 'shopkeep', x: shop.x, y: shop.y, work: 240, skill: 'social' }; return; }
+  }
   // 2. Work jobs, scored by priority then distance.
   let best = null, bestScore = -Infinity;
   for (const job of game.jobs) {
@@ -10308,6 +10338,8 @@ function assignTask(game, npc) {
     if (score > bestScore) { bestScore = score; best = job; }
   }
   if (best) { best.claim = npc.id; npc.task = { ...best, workLeft: best.work }; return; }
+  // 2b. Nothing queued: they find something useful on their own.
+  if (game._m.kind === 'camp' && selfDirect(game, npc)) return;
   // 3. Nothing to do: socialise or wander.
   if (game.tick % 7 === 0) {
     const others = game.here.filter(c => c !== npc && !c.away && !c.dead && Math.hypot(c.x - npc.x, c.y - npc.y) < 12);
@@ -10320,6 +10352,55 @@ function assignTask(game, npc) {
   addThought(npc, 'idle');
   const spot = findNearest(game.world, npc.x, npc.y, (x, y) => game.world.walkable(x, y) && (x + y) % 3 === game.tick % 3, 8);
   npc.task = { kind: 'wander', x: spot ? spot[0] : npc.x, y: spot ? spot[1] : npc.y, work: 12 };
+}
+
+// Ticks a colonist spends per tile on plain ground (was 2.4: everyone walks ~15% quicker now).
+const MOVE_TICKS = 2.05;
+
+/**
+ * A colonist with no job looks for the most useful thing within reach: what
+ * the colony is shortest of (wood, food, stone, ore), nearest first, within
+ * what their work priorities allow. They mark it the way a player would, so
+ * others can pitch in. Building stays the player's call: nobody starts one.
+ */
+function selfDirect(game, npc) {
+  if ((npc.selfCd || 0) > game.tick) return false;
+  npc.selfCd = game.tick + 30;   // an empty search isn't repeated every tick
+  const w = game.world, res = game.resources, cap = storageCap(game);
+  const pr = (k) => npc.priorities[k] ?? 2;
+  const chop = pr('chop') > 0, mine = pr('mine') > 0;
+  const eaters = Math.max(1, game.colonists.filter(c => !c.dead).length);
+  const want = {
+    tree: chop && (res.wood || 0) < cap * 0.7,
+    fungus: chop && (res.food || 0) + (res.meal || 0) < eaters * 12,
+    herb: chop && (res.herbs || 0) < 30,
+    rock: mine && (res.stone || 0) < cap * 0.5,
+    vein: mine,
+  };
+  if (!Object.values(want).some(Boolean)) return false;
+  const exposed = (x, y) => w.walkable(x + 1, y) || w.walkable(x - 1, y) || w.walkable(x, y + 1) || w.walkable(x, y - 1);
+  const spot = findNearest(w, npc.x, npc.y, (x, y) => {
+    const i = w.idx(x, y);
+    if (w.designation[i] || w.building[i]) return false;
+    const bad = game.unreachable.get(`${x},${y}`);
+    if (bad && bad > game.tick) return false;
+    const f = w.feature[i];
+    if (f && FEATURES[f].inRock) return want.vein && exposed(x, y);
+    if (f === 'tree') return want.tree;
+    if (f === 'fungus' || f === 'glowcap') return want.fungus;
+    if (f === 'herb') return want.herb;
+    if (!f && TERRAIN[w.terrain[i]].mineable && w.terrain[i] !== T.RIFT) return want.rock && exposed(x, y);
+    return false;
+  }, 20);
+  if (!spot) return false;
+  const [x, y] = spot, i = w.idx(x, y), f = w.feature[i];
+  const kind = (f && !FEATURES[f].inRock) ? 'harvest' : 'mine';
+  if (!designate(game, x, y, kind)) return false;
+  const job = siteJobAt(game, x, y);
+  if (!job) return false;
+  npc.task = { kind: job.kind, x, y, work: job.work, skill: job.skill, claim: npc.id, self: true };
+  npc.task.workLeft = siteWorkLeft(game, job.kind, x, y, job.work);
+  return true;
 }
 
 // --- movement ---------------------------------------------------------------
@@ -10345,7 +10426,7 @@ function stepToward(game, npc, tx, ty, adjacent) {
   if (!occupyMove(game, npc, next[0], next[1])) return blockedStep(game, npc, next, tx, ty, adjacent);
   npc.blocked = 0;
   npc.pathIdx++;
-  npc.moveCd += 2.4 * game.world.moveCost(npc.x, npc.y);
+  npc.moveCd += MOVE_TICKS * game.world.moveCost(npc.x, npc.y);
   return npc.pathIdx >= npc.path.length;
 }
 
@@ -10382,6 +10463,28 @@ function blockedStep(game, npc, next, tx, ty, adjacent) {
     }
     // Eating, hauling, wandering: arm's length is close enough.
     if (Math.abs(npc.x - tx) <= 1 && Math.abs(npc.y - ty) <= 1) { npc.blocked = 0; return true; }
+  }
+  // A friend in the way: trade places with them when that's the quicker way
+  // through — they're standing still, or walking straight at us — rather than
+  // queueing behind them or walking the long way round.
+  const friend = other && other !== npc && game.colonists.includes(other) && (other.mapId || 0) === (npc.mapId || 0)
+    && !other.dead && !other.downed && !other.carriedBy && !npc.carriedBy && other.state !== 'sleeping' && !(game.field && game.field.units && game.field.units.has(other));
+  if (friend && !(lastStep && !adjacent)) {
+    const theirNext = other.path && other.path[other.pathIdx];
+    const headOn = !!theirNext && theirNext[0] === npc.x && theirNext[1] === npc.y;
+    const standing = other.state !== 'moving';
+    if (headOn || standing || npc.blocked >= 3) {
+      // Is walking round them just as quick? Then go round and leave them be.
+      const left = npc.path.length - npc.pathIdx;
+      const round = headOn ? null : findPath(game.world, npc.x, npc.y, tx, ty, adjacent, 300, game.occ);
+      if (round && round.length && round.length <= left) { npc.path = round; npc.pathIdx = 0; return false; }
+      const path = npc.path, idx = npc.pathIdx;
+      swapUnits(game, npc, other);
+      npc.path = path; npc.pathIdx = idx + 1;   // we carry on; they re-plan from where we were
+      npc.blocked = 0;
+      npc.moveCd += MOVE_TICKS * game.world.moveCost(npc.x, npc.y);
+      return npc.pathIdx >= npc.path.length;
+    }
   }
   if (npc.blocked >= 3 && npc.blocked % (adjacent ? 6 : 3) === 0) {
     // A way round the bodies is close by or not worth the search.
@@ -10678,10 +10781,10 @@ function doTask(game, npc) {
     if (!beast || beast.dead) { npc.task = null; return; }
     // An animal that won't hold still is let go after a while.
     t.chase = (t.chase || 0) + 1;
-    if (t.chase > 400) { npc.task = null; return; }
+    if (t.chase > (t.kind === 'hunt' ? 1500 : 400)) { npc.task = null; return; }
     if (beast.x !== t.x || beast.y !== t.y) { t.x = beast.x; t.y = beast.y; npc.path = null; }
   }
-  const adjacentKinds = { travel: 1, mine: 1, harvest: 1, build: 1, floor: 1, plant: 1, farmTend: 1, farmHarvest: 1, compost: 1, craft: 1, research: 1, train: 1, pray: 1, heal: 1, joy: 1, socialize: 1, tame: 1, gather: 1, butcher: 1 };
+  const adjacentKinds = { travel: 1, mine: 1, harvest: 1, build: 1, floor: 1, plant: 1, farmTend: 1, farmHarvest: 1, compost: 1, craft: 1, research: 1, train: 1, pray: 1, heal: 1, joy: 1, socialize: 1, tame: 1, gather: 1, butcher: 1, shopkeep: 1, hunt: 1 };
   if (t.kind === 'fight') { doFight(game, npc, t); return; }
   if (t.kind === 'rescue') { doRescue(game, npc, t); return; }
   const needAdjacent = !!adjacentKinds[t.kind];
@@ -10703,7 +10806,20 @@ function doTask(game, npc) {
     else if (t.night && npc.order) { npc.task = null; }   // woken by an order
     return;
   }
+  if (t.kind === 'hunt') {
+    // A strike every few beats until it drops; see huntStrike.
+    npc.state = 'fighting';
+    t.workLeft = (t.workLeft ?? t.work) - 1;
+    if (t.workLeft <= 0) { t.workLeft = t.work; huntStrike(game, npc, t); }
+    return;
+  }
   npc.state = 'working';
+  if (t.kind === 'shopkeep') {
+    // Open for as long as they stand there, and a little after (a shift change, a step away).
+    const b = game.world.inside(t.x, t.y) ? game.world.building[game.world.idx(t.x, t.y)] : null;
+    if (!b || !b.done || b.keeper !== npc.id || game.isNight) { npc.task = null; npc.state = 'idle'; return; }
+    b.keptUntil = game.tick + 120;
+  }
   const skill = t.skill || (t.kind === 'eat' ? 'survival' : 'social');
   const rate = workRate(game, npc, skill);
   if (WORK_SITE_KINDS[t.kind]) {
@@ -10721,6 +10837,29 @@ function doTask(game, npc) {
   }
   if (t.skill) gainXp(game, npc, t.skill, rate * 0.85);
   if (t.workLeft <= 0) completeTask(game, npc);
+}
+
+/** One blow at a hunted beast. It dies into meat and hide; a dangerous one hits back. */
+function huntStrike(game, npc, t) {
+  const b = game.beasts.find(k => k.id === t.beastId);
+  if (!b || b.dead) { npc.task = null; return; }
+  const A = ANIMALS[b.species], rng = game.rng;
+  const dmg = Math.max(1, rng.int(2, 6) + Math.round((npc.skills.melee || 0) * 0.6) - (A.armor || 0));
+  b.hp = (b.hp ?? A.hp) - dmg;
+  gainXp(game, npc, 'melee', 25);
+  if (b.hp <= 0) {
+    b.dead = true;
+    dropItems(game, b.x, b.y, butcherBeast(game, b));
+    game.log(`${npc.name.short} brings down ${b.name} the ${A.name}.`, 'good', npc.id);
+    for (const c of game.colonists) if (c.task && c.task.kind === 'hunt' && c.task.beastId === b.id) c.task = null;
+    game.jobsDirty = true;
+    return;
+  }
+  if (rng.chance(A.wildAggressive ? 0.5 : 0.15)) {
+    const hit = rng.int(1, 3 + A.power);
+    npc.hp = Math.max(1, npc.hp - hit);
+    if (hit >= 5) addThought(npc, 'wounded');
+  }
 }
 
 /**
@@ -12348,7 +12487,7 @@ function tickRaiders(game) {
     r.stamina = Math.max(0, r.stamina - 0.05);   // a night of marching and killing wears even these down
     r.moveCd = (r.moveCd || 0) - 1;
     if (r.moveCd > 0) continue;
-    r.moveCd = r.stamina < 20 ? 5 : 3;
+    r.moveCd += r.stamina < 20 ? 4.3 : 2.6;   // fractions carry over, so the pace is even
     // Beaten and running: back into the Rift (or off the map), and gone.
     if (r.fleeing) {
       const home = r.riftSpawn && mouth ? mouth : edgeSpawn(game);
@@ -12699,6 +12838,47 @@ const SHOPS = {
 };
 function shopsOf(root) { return root.shops || (root.shops = {}); }
 
+// --- shopkeepers ------------------------------------------------------------------
+// A shop you build only trades while someone is behind its counter: assign a
+// colonist as its keeper (from the building) and they mind it through the day.
+// Night, a keeper off eating or sleeping, or no keeper at all: the shop is shut.
+const KEPT_SHOPS = new Set(['armory', 'apothecary', 'stable', 'tavern', 'spellmason']);
+/** Is someone minding this counter right now? Kept for a moment after they step away. */
+function keptNow(root, b) { return (b.keptUntil || 0) >= root.tick; }
+/** Whether a shop building of this id is open, and if not, why not. */
+function shopStatus(game, bid) {
+  const root = game.root, name = BUILDINGS[bid].name;
+  const recs = root.world.findBuildings(bid).filter(r => r.b.done);
+  if (!recs.length) return { open: false, why: `Needs a${/^[AEIOU]/.test(name) ? 'n' : ''} ${name}.` };
+  if (!KEPT_SHOPS.has(bid)) return { open: true };
+  for (const r of recs) if (keptNow(root, r.b)) return { open: true, keeper: root.colonists.find(c => c.id === r.b.keeper) || null };
+  const r = recs.find(r => keeperOf(root, r.b));
+  if (r) return { open: false, why: `The ${name} is shut: ${keeperOf(root, r.b).name.short} isn't at the counter${root.isNight ? ' at night' : ' yet'}.` };
+  return { open: false, why: `The ${name} has no shopkeeper. Click it and assign someone to mind the counter.` };
+}
+/** The living colonist assigned to keep this building's counter, if any. */
+function keeperOf(root, b) {
+  if (b.keeper == null) return null;
+  const c = root.colonists.find(k => k.id === b.keeper && !k.dead);
+  return c || null;
+}
+/** Put a colonist behind a shop's counter (null to relieve whoever is there). One shop each. */
+function assignKeeper(game, b, npcId) {
+  const root = game.root;
+  if (npcId != null) for (const r of root.world.findBuildings()) if (r.b !== b && r.b.keeper === npcId) r.b.keeper = null;
+  b.keeper = npcId;
+  b.keptUntil = 0;
+  const c = npcId != null ? root.colonists.find(k => k.id === npcId) : null;
+  if (c) { c.task = null; c.path = null; root.log(`${c.name.short} now keeps the ${BUILDINGS[b.id].name}.`, 'info', c.id); }
+  return c;
+}
+/** A counter's stock object, if `from` is one of the shops you built: '' if open, else why not. */
+function counterShut(game, from) {
+  const S = shopsOf(game.root);
+  for (const id in SHOPS) if (S[id] && S[id] === from) { const st = shopStatus(game, SHOPS[id].building); return st.open ? '' : st.why; }
+  return '';
+}
+
 /** What an item sells for at a counter, and what the counter pays for it. */
 function itemPrice(item) { return Math.max(10, Math.round((item.value || 10) * 3.2)); }
 function itemBuyback(item) { return Math.max(2, Math.round(itemPrice(item) * 0.35)); }
@@ -12779,6 +12959,7 @@ function tickShops(game) {
 
 /** Buy the `i`th item off a counter or a trader's table. `from`: a stock object with `.items`. */
 function buyItem(game, from, i, cat = 'shops') {
+  const shut = counterShut(game, from); if (shut) return shut;
   const it = from && from.items && from.items[i];
   if (!it) return 'Not in stock.';
   const price = it.commission ? it.balance : itemPrice(it);
@@ -12800,6 +12981,7 @@ function sellItem(game, armoryIdx) {
   return '';
 }
 function buyPotion(game, from, id, cat = 'shops') {
+  const shut = counterShut(game, from); if (shut) return shut;
   if (!from || !(from.potions && from.potions[id] > 0)) return 'Not in stock.';
   const price = Math.round(potionPrice(id) * (from.mult || 1));
   if (!pay(game, price, cat)) return `Costs ${price} gold.`;
@@ -12816,6 +12998,7 @@ function sellPotion(game, id) {
   return '';
 }
 function buyBeast(game, from, i, cat = 'shops') {
+  const shut = counterShut(game, from); if (shut) return shut;
   const b = from && from.beasts && from.beasts[i];
   if (!b) return 'Not in stock.';
   const price = beastPrice(b);
@@ -12829,6 +13012,7 @@ function buyBeast(game, from, i, cat = 'shops') {
 }
 /** Sign on a sellsword: they fight like anyone of ours, for a daily wage. */
 function hireMerc(game, from, i, cat = 'mercs') {
+  const shut = counterShut(game, from); if (shut) return shut;
   const npc = from && from.mercs && from.mercs[i];
   if (!npc) return 'Nobody to hire.';
   const fee = mercFee(npc);
@@ -13868,7 +14052,7 @@ function tickFloorMonsters(v) {
       }
     }
     if (r.moveCd > 0) continue;
-    r.moveCd = 3;
+    r.moveCd += 2.6;   // fractions carry over, so the pace is even
     // Broke and ran: back to the post, and settle down again once there.
     if (r.fleeing) {
       if (!r.home || (r.x === r.home.x && r.y === r.home.y) || v.tick > r.fleeing) { r.fleeing = 0; r.awake = false; continue; }
@@ -14908,6 +15092,7 @@ class Game {
   /** Buy from the peddler ('peddler') or the spellmason ('spellmason'). kind: scrolls|books|potions|reagents */
   buyMagic(from, kind, id) {
     const shop = from === 'peddler' ? this.peddler && this.peddler.stock : this.spellmasonStock;
+    if (from === 'spellmason') { const st = shopStatus(this, 'spellmason'); if (!st.open) return st.why; }
     if (!shop || !(shop[kind][id] > 0)) return 'Not in stock.';
     const price = kind === 'books' ? bookPrice(id) : kind === 'scrolls' ? scrollPrice(id) : kind === 'reagents' ? (id === 'class_tome' ? 400 : 25) : 30;
     const cost = Math.round(price * (from === 'spellmason' ? 1.1 : 1));
@@ -14922,7 +15107,7 @@ class Game {
   }
   /** The spellmason copies a book you own. */
   copyBook(id) {
-    if (!this.world.findBuildings('spellmason').length) return 'Needs a spellmason.';
+    { const st = shopStatus(this, 'spellmason'); if (!st.open) return st.why; }
     if (!(this.library.books[id] > 0)) return 'You need a copy to copy.';
     const cost = { dust: 5, cloth: 3, gold: Math.round(bookPrice(id) * 0.3) };
     for (const [k, v] of Object.entries(cost)) if ((this.resources[k] || 0) < v) return `Needs ${v} ${k}.`;
@@ -14931,7 +15116,7 @@ class Game {
     return '';
   }
   sellBook(id) {
-    if (!this.world.findBuildings('spellmason').length) return 'Needs a spellmason.';
+    { const st = shopStatus(this, 'spellmason'); if (!st.open) return st.why; }
     if (!(this.library.books[id] > 0)) return 'Nothing to sell.';
     this.library.books[id]--;
     this.resources.gold = (this.resources.gold || 0) + Math.round(bookPrice(id) * 0.4);
@@ -15093,6 +15278,32 @@ class Game {
   suggestCrop(x, y) { return recommendCrop(this.farmContext(x, y)); }
 
   /** Mark a tamed beast for slaughter. */
+  /** Send the best animal-handler of a selection to tame a wild beast now. Returns who went. */
+  orderTame(ids, beastId) {
+    const b = this.beasts.find(k => k.id === beastId && !k.dead && !k.tame);
+    if (!b) return null;
+    const able = ids.map(id => this.colonists.find(c => c.id === id && !c.dead && !c.downed && !c.away)).filter(Boolean);
+    if (!able.length) return null;
+    able.sort((p, q) => (q.skills.animals || 0) - (p.skills.animals || 0) || Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y));
+    const c = able[0], work = ANIMALS[b.species].wildAggressive ? 110 : 70;
+    c.order = null; c.path = null;
+    c.task = { kind: 'tame', x: b.x, y: b.y, work, workLeft: work, skill: 'animals', beastId: b.id, claim: c.id, ordered: true };
+    return c;
+  }
+  /** Hunt a beast: everyone selected closes on it and strikes until it drops. */
+  orderHunt(ids, beastId) {
+    const b = this.beasts.find(k => k.id === beastId && !k.dead);
+    if (!b) return 0;
+    let n = 0;
+    for (const id of ids) {
+      const c = this.colonists.find(k => k.id === id && !k.dead && !k.downed && !k.away);
+      if (!c) continue;
+      c.order = null; c.path = null;
+      c.task = { kind: 'hunt', x: b.x, y: b.y, work: 16, workLeft: 16, skill: 'melee', beastId: b.id, ordered: true };
+      n++;
+    }
+    return n;
+  }
   markButcher(beastId) {
     const b = this.beasts.find(x => x.id === beastId);
     if (!b || !b.tame) return false;
@@ -15244,11 +15455,26 @@ function countPlanned(game, id) {
   for (const b of new Set(w.building)) if (b && b.id === id) n++;
   return n;
 }
-function autoplayStep(game) {
+
+/**
+ * `opts.build`: whether the governor also chooses what to build. The in-game
+ * Auto button leaves building to the player; the headless tests let it build.
+ */
+function autoplayStep(game, opts = {}) {
+  const build = opts.build !== false;
   if (game.tick % 40 !== 0) return;
   const w = game.world;
   const rng = game.rng;
   const res = game.resources;
+
+  // --- shopkeepers: every shop gets someone behind the counter, peasants first ---
+  for (const rec of w.findBuildings()) {
+    if (!KEPT_SHOPS.has(rec.b.id) || keeperOf(game.root, rec.b)) continue;
+    const keeping = new Set(w.findBuildings().map(r => r.b.keeper).filter(k => k != null));
+    const pick = game.colonists.filter(c => !c.dead && !c.away && !c.merc && !keeping.has(c.id))
+      .sort((a, b) => (b.peasant ? 1 : 0) - (a.peasant ? 1 : 0) || a.level - b.level)[0];
+    if (pick) assignKeeper(game, rec.b, pick.id);
+  }
 
   // --- skill trees: the autopilot spends every point as it comes ---
   game.autoSkills = true;
@@ -15336,7 +15562,7 @@ function autoplayStep(game) {
   }
 
   // --- construction ---
-  for (const [id, target] of wants(game)) {
+  if (build) for (const [id, target] of wants(game)) {
     if (!target) continue;
     if (!game.unlocked.has(id)) continue;
     if (countPlanned(game, id) >= target) continue;
@@ -16755,6 +16981,9 @@ const WALL_PAL = {
 };
 const BLANKETS = ['#8e3b3b', '#3b5f8e', '#4f7a45', '#8a6a2e', '#6b4a7a', '#7a5a45'];
 
+// Shops that need a keeper behind the counter (economy.js KEPT_SHOPS).
+const KEPT_SHOP_IDS = new Set(['armory', 'apothecary', 'stable', 'tavern', 'spellmason']);
+
 // Roofs by what a building is: shops red tile, schools slate, holy places pale
 // stone with gold, farm buildings barn red, workshops and study green.
 function roofOf(id, def) {
@@ -18049,7 +18278,7 @@ class Renderer {
       this.atlas.draw(ctx, icon, cx, cy, this.tile * (def.walled ? 0.42 : 0.6));
     }
     // A shop with nobody behind the counter says so.
-    if (b.shopClosed) {
+    if (KEPT_SHOP_IDS.has(b.id) && !((b.keptUntil || 0) >= this.game.tick)) {
       const cx = sx + (door[0] + 0.5) * this.tile, cy = sy + (door[1] + 0.62) * this.tile;
       ctx.font = `bold ${Math.max(8, this.tile * 0.2)}px ${UI_FONT}`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -18590,7 +18819,9 @@ class Renderer {
   trackHover(list) {
     const hv = this.hover && !this.dragRect ? this.hover : null;
     let hot = null;
-    if (hv) for (const k of ['colonist', 'enemy', 'beast']) {
+    // A portrait hovered in the colonist bar picks its colonist out.
+    if (this.barHover != null) { const e = list.find(e => e.kind === 'colonist' && e.u.id === this.barHover); if (e) hot = e; }
+    if (hv && !hot) for (const k of ['colonist', 'enemy', 'beast']) {
       hot = list.find(e => e.kind === k && e.u.x === hv[0] && e.u.y === hv[1]);
       if (hot) break;
     }
@@ -18959,6 +19190,30 @@ class Renderer {
       ctx.fillStyle = '#ffffff';
       ctx.fillText(label, ax + 5, ay - 3);
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    }
+    // The colonist whose portrait is hovered in the top bar: a pulsing ring, and
+    // an arrow at the screen edge if they're off it.
+    if (this.barHover != null) {
+      const c = this.game.colonists.find(k => k.id === this.barHover && !k.dead && !k.away && (k.mapId || 0) === (this.game._m ? this.game._m.id : 0));
+      if (c) {
+        const mo = this.motion && this.motion.get(c);
+        const ux = mo && mo.x != null ? mo.x : c.x, uy = mo && mo.y != null ? mo.y : c.y;
+        const [cx, cy] = this.worldToScreen(ux + 0.5, uy + 0.5);
+        const pulse = 0.5 + 0.5 * Math.sin(this.now * 6);
+        const inView = cx > 0 && cy > 0 && cx < this.viewW && cy < this.viewH;
+        if (inView) {
+          ctx.strokeStyle = `rgba(238,196,92,${0.65 + pulse * 0.35})`; ctx.lineWidth = 2.5;
+          ctx.beginPath(); ctx.arc(cx, cy, t * (0.62 + pulse * 0.1), 0, Math.PI * 2); ctx.stroke();
+          ctx.fillStyle = 'rgba(238,196,92,0.12)';
+          ctx.beginPath(); ctx.arc(cx, cy, t * 0.62, 0, Math.PI * 2); ctx.fill();
+        } else {
+          const ex = Math.max(18, Math.min(this.viewW - 18, cx)), ey = Math.max(18, Math.min(this.viewH - 18, cy));
+          const a = Math.atan2(cy - ey, cx - ex);
+          ctx.save(); ctx.translate(ex, ey); ctx.rotate(a);
+          ctx.fillStyle = '#eec45c'; ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-7, -8); ctx.lineTo(-7, 8); ctx.closePath(); ctx.fill();
+          ctx.restore();
+        }
+      }
     }
     // Build mode: the footprint of what would go down, green where it fits, red where it doesn't.
     if (this.ghostId && this.hover && !this.dragRect) {
@@ -20393,55 +20648,119 @@ class UI {
   /** A right-click tap: work whatever's on the tile if anything is, else walk
    *  the selected squad there. */
   rightClickAt(x, y) {
-    const g = this.mv, m = g._m;
+    const g = this.mv, m = g._m, w = g.world;
     // Only people on this map can be sent anywhere on it.
     const ids = [...this.squad].filter(id => { const c = g.colonists.find(k => k.id === id); return c && (c.mapId || 0) === m.id; });
     const n = ids.length;
-    const who = n === 1 ? g.colonists.find(c => c.id === ids[0]).name.short : `${n} people`;
     if (!n) { this.orderInteract(x, y); return; }
+    const who = n === 1 ? g.colonists.find(c => c.id === ids[0]).name.short : `${n} people`;
+    const opts = [];
+    const add = (icon, label, run, kind = '') => opts.push({ icon, label, run, kind });
+
     // The way down (the gate, or a floor's stairs) and the way up.
     const way = this.stairsAt(x, y);
     if (way) {
-      if (way === 'down' && m.kind === 'camp' && !g.canEnterRift) { this.flash('The Rift is open and spewing — nobody goes in until dawn.', 'warn'); return; }
-      if (way === 'down' && m.kind === 'floor' && m.depth >= g.floorCount) { this.flash('This is the bottom of the Rift today.', 'warn'); return; }
-      this.game.orderTravel(ids, way);
       const where = way === 'up' ? (m.depth === 1 ? 'back to camp' : `up to floor ${m.depth - 1}`) : m.kind === 'camp' ? 'into the Rift' : `down to floor ${m.depth + 1}`;
-      this.flash(`${who} ${n === 1 ? 'heads' : 'head'} ${where}`, 'good');
-      return;
+      add(way === 'up' ? '⬆️' : '🌀', where[0].toUpperCase() + where.slice(1), () => {
+        if (way === 'down' && m.kind === 'camp' && !g.canEnterRift) { this.flash('The Rift is open and spewing — nobody goes in until dawn.', 'warn'); return; }
+        if (way === 'down' && m.kind === 'floor' && m.depth >= g.floorCount) { this.flash('This is the bottom of the Rift today.', 'warn'); return; }
+        this.game.orderTravel(ids, way);
+        this.flash(`${who} ${n === 1 ? 'heads' : 'head'} ${where}`, 'good');
+      }, 'good');
     }
     // One of ours down on the ground: the nearest of the selection carries them out.
     const hurt = g.here.find(c => c.downed && !c.carriedBy && c.x === x && c.y === y);
-    if (hurt) {
+    if (hurt) add('🩹', `Carry ${hurt.name.short} to safety`, () => {
       const r = this.game.orderRescue(ids, hurt.id);
       this.flash(r ? `${r.name.short} goes to carry ${hurt.name.short} to safety` : `Nobody selected can carry ${hurt.name.short}`, r ? 'good' : 'warn');
-      return;
-    }
-    // One of our war or pack beasts: it takes the (first) selected as its handler.
-    const pet = g.beasts.find(b => !b.dead && b.tame && b.x === x && b.y === y);
-    if (pet && canFollow(pet)) {
+    }, 'good');
+    // A friend standing there (not one of the selection): walk over and trade places.
+    const friend = g.here.find(c => !c.downed && !c.dead && !ids.includes(c.id) && c.x === x && c.y === y);
+    if (friend && n === 1) add('🔄', `Swap places with ${friend.name.short}`, () => { g.orderMove(ids, x, y); this.flash(`${who} swaps places with ${friend.name.short}`, 'info'); });
+    // Beasts: ours can be given a handler or slaughtered; wild ones tamed or hunted.
+    const beast = g.beasts.find(b => !b.dead && b.x === x && b.y === y);
+    if (beast && beast.tame) {
       const lead = g.colonists.find(c => c.id === ids[0]);
-      const same = pet.handler === lead.id;
-      this.game.setHandler(pet.id, same ? null : lead.id);
-      this.flash(same ? `${pet.name} no longer follows ${lead.name.short}` : `${pet.name} now follows ${lead.name.short}`, 'good');
-      this.sigs.insp = null;
-      return;
+      if (canFollow(beast)) {
+        const same = beast.handler === lead.id;
+        add('🦮', same ? `${beast.name} stops following ${lead.name.short}` : `${beast.name} follows ${lead.name.short}`, () => {
+          this.game.setHandler(beast.id, same ? null : lead.id);
+          this.flash(same ? `${beast.name} no longer follows ${lead.name.short}` : `${beast.name} now follows ${lead.name.short}`, 'good');
+          this.sigs.insp = null;
+        });
+      }
+      add('🔪', beast.markedButcher ? `Spare ${beast.name}` : `Mark ${beast.name} for slaughter`, () => { this.game.markButcher(beast.id); this.sigs.insp = null; }, 'danger');
+    } else if (beast) {
+      const A = ANIMALS[beast.species];
+      add('🤝', `Tame the ${A.name}${A.wildAggressive ? ' (dangerous)' : ''}`, () => {
+        const c = this.game.orderTame(ids, beast.id);
+        this.flash(c ? `${c.name.short} tries to tame the ${A.name}` : 'Nobody free to do it', c ? 'good' : 'warn');
+      }, 'good');
+      add('⚔️', `Hunt the ${A.name}`, () => {
+        const k = this.game.orderHunt(ids, beast.id);
+        this.flash(k ? `${who} ${n === 1 ? 'hunts' : 'hunt'} the ${A.name}` : 'Nobody free to do it', k ? 'warn' : 'info');
+      }, 'danger');
     }
-    // An enemy: the squad closes on it together, which is what starts a fight.
+    // Someone else's people: talk to the neutral ones, fight anyone.
     const r = g.raiders.find(r => r.hp > 0 && r.x === x && r.y === y);
-    if (r && r.neutral) { this.sel = { kind: 'enemy', id: r.id, ref: r }; this.sigs.insp = null; this.renderInspector(); return; }
-    if (r) { g.orderAttack(ids, r.id); this.flash(`${who} ${n === 1 ? 'attacks' : 'attack'} ${r.name.short}`, 'warn'); return; }
+    if (r && r.neutral) add('💬', `Talk to ${r.name.short}`, () => { this.sel = { kind: 'enemy', id: r.id, ref: r }; this.sigs.insp = null; this.renderInspector(); }, 'good');
+    if (r) add('⚔️', `Attack ${r.name.short}${r.neutral ? ' (they are neutral)' : ''}`, () => { g.orderAttack(ids, r.id); this.flash(`${who} ${n === 1 ? 'attacks' : 'attack'} ${r.name.short}`, 'warn'); }, 'danger');
     // Something workable: everyone takes a side of it and works it at once.
     const job = g.siteJobAt(x, y);
-    if (job && g.orderWork(ids, x, y)) {
-      this.renderer.cacheVersion = -1;
-      const f = g.world.feature[g.world.idx(x, y)];
-      const verb = job.kind === 'harvest' && f && FEATURES[f].prop ? 'opening the ' + FEATURES[f].name.toLowerCase()
-        : { mine: 'mining', harvest: 'harvesting', build: 'building', floor: 'laying floor' }[job.kind];
-      this.flash(`${who} ${verb}${n > 1 ? ` together · ×${n} speed` : ''}`, 'good');
-      return;
+    if (job) {
+      const f = w.feature[w.idx(x, y)];
+      const label = job.kind === 'harvest' && f && FEATURES[f].prop ? `Open the ${FEATURES[f].name.toLowerCase()}`
+        : job.kind === 'harvest' ? `${f === 'tree' ? 'Chop' : 'Harvest'} ${f && FEATURES[f] ? FEATURES[f].name.toLowerCase() : ''}`.trim()
+          : { mine: 'Mine', build: 'Build', floor: 'Lay the floor' }[job.kind];
+      add({ mine: '⛏️', harvest: f === 'tree' ? '🪓' : '🌿', build: '🔨', floor: '🧱' }[job.kind], `${label}${n > 1 ? ` together (×${n})` : ''}`, () => {
+        if (!g.orderWork(ids, x, y)) { this.flash('Nobody can get at it', 'warn'); return; }
+        this.renderer.cacheVersion = -1;
+        this.flash(`${who}: ${label.toLowerCase()}`, 'good');
+      }, 'good');
     }
-    g.orderMove(ids, x, y);
-    this.flash(`Moving ${n === 1 ? who : n + ' people'}`, 'info');
+    // A shop with an empty counter: put the selected person behind it.
+    const bd = w.inside(x, y) ? w.building[w.idx(x, y)] : null;
+    if (bd && bd.done && KEPT_SHOPS.has(bd.id) && n === 1) {
+      const c = g.colonists.find(k => k.id === ids[0]);
+      if (bd.keeper !== c.id) add('🧑‍💼', `${c.name.short} keeps the ${BUILDINGS[bd.id].name}`, () => { assignKeeper(g, bd, c.id); this.sigs.insp = null; this.renderInspector(); }, 'good');
+    }
+    if (w.walkable(x, y)) add('👣', `Move ${n === 1 ? who : n + ' people'} here`, () => { g.orderMove(ids, x, y); this.flash(`Moving ${n === 1 ? who : n + ' people'}`, 'info'); });
+    else if (!opts.length) add('👣', 'Move as close as they can', () => { g.orderMove(ids, x, y); this.flash(`Moving ${n === 1 ? who : n + ' people'}`, 'info'); });
+
+    // Plain ground is just a move; anything more gets the menu.
+    if (opts.length === 1) { opts[0].run(); return; }
+    this.showCtxMenu(opts);
+  }
+
+  /** The right-click menu: every way the selection can interact with the tile. */
+  showCtxMenu(opts) {
+    let box = $('#ctxmenu');
+    if (!box) {
+      box = el('div', 'ctxmenu');
+      box.id = 'ctxmenu';
+      document.body.appendChild(box);
+      const close = (e) => { if (!box.classList.contains('hidden') && !(e.target && e.target.closest && e.target.closest('#ctxmenu'))) box.classList.add('hidden'); };
+      addEventListener('mousedown', close, true);
+      // Esc closes it; 1-9 picks an option (ahead of the game's own hotkeys).
+      addEventListener('keydown', (e) => {
+        if (box.classList.contains('hidden')) return;
+        const k = +e.key;
+        if (e.key === 'Escape') { box.classList.add('hidden'); e.stopPropagation(); return; }
+        if (k >= 1 && this.ctxOpts && this.ctxOpts[k - 1]) { e.preventDefault(); e.stopPropagation(); box.classList.add('hidden'); this.ctxOpts[k - 1].run(); }
+      }, true);
+    }
+    box.innerHTML = '';
+    opts.forEach((o, i) => {
+      const b = el('button', 'cm-it' + (o.kind ? ' ' + o.kind : ''), `<span class="cm-ic">${o.icon}</span><span>${esc(o.label)}</span><kbd>${i + 1}</kbd>`);
+      b.onclick = () => { box.classList.add('hidden'); o.run(); };
+      box.appendChild(b);
+    });
+    this.ctxOpts = opts;
+    box.classList.remove('hidden');
+    const mx = (this.mouse && this.mouse.x) || innerWidth / 2, my = (this.mouse && this.mouse.y) || innerHeight / 2;
+    const r = box.getBoundingClientRect();
+    box.style.left = `${Math.min(mx + 4, innerWidth - r.width - 8)}px`;
+    box.style.top = `${Math.min(my + 4, innerHeight - r.height - 8)}px`;
   }
 
   /** 'down' on the camp's Rift Gate or a floor's stairs down, 'up' on stairs up, else null. */
@@ -20755,7 +21074,7 @@ class UI {
       const g = this.game;
       if (!this.paused && !g.gameOver) {
         this.tickAcc += dt * TICKS_PER_SEC * (mult[this.speed] ?? 1);
-        while (this.tickAcc >= 1) { this.tickAcc -= 1; if (this.auto) autoplayStep(g); g.step(); }
+        while (this.tickAcc >= 1) { this.tickAcc -= 1; if (this.auto) autoplayStep(g, { build: false }); g.step(); }
         this.updateVisitors(dt);
       }
       // Autosave with the sunrise; and, if asked, stop the clock when a fight breaks out.
@@ -20824,6 +21143,7 @@ class UI {
       }).join('');
     }
 
+    this.renderResearchChip();
     this.renderColbar();
     this.renderMapTabs();
     this.renderFightLog();
@@ -20845,6 +21165,27 @@ class UI {
     if (hb) { hb.classList.toggle('on', this.hoverInfo); hb.title = `Hover info: ${this.hoverInfo ? 'on' : 'off'} — the cards that follow the pointer over the map`; }
   }
 
+  /** What's being researched, beside the resources: name, a progress bar, what's queued next. */
+  renderResearchChip() {
+    const box = $('#rsch');
+    if (!box) return;
+    const g = this.game, R = g.research, cur = R.current, def = cur && g.researchDefs[cur];
+    const pct = def ? Math.min(100, Math.floor((R.progress / def.cost) * 100)) : 0;
+    const sig = `${cur}|${pct}|${R.queue.length}`;
+    if (this.sigs.rsch !== sig) {
+      this.sigs.rsch = sig;
+      box.classList.toggle('none', !def);
+      box.innerHTML = def
+        ? `<div class="rs-h"><span class="rs-i">🔬</span><b>${esc(def.name)}</b><span class="rs-p">${pct}%</span></div>
+           <u><s style="width:${pct}%"></s></u>${R.queue.length ? `<div class="rs-q">then ${esc(g.researchDefs[R.queue[0]].name)}${R.queue.length > 1 ? ` +${R.queue.length - 1}` : ''}</div>` : ''}`
+        : `<div class="rs-h"><span class="rs-i">🔬</span><b>No research</b></div><div class="rs-q">Click to choose a project</div>`;
+      if (!box.onclick) box.onclick = () => this.openDrawer('research');
+    }
+    // Sit just right of the resource readout, whatever its width.
+    const res = $('#res');
+    if (res) box.style.left = `${res.offsetLeft + res.offsetWidth + 6}px`;
+  }
+
   /**
    * RimWorld's colonist bar: one portrait per colonist along the top. The box
    * fills from the bottom with mood, a red sliver on the left is lost health,
@@ -20856,7 +21197,14 @@ class UI {
     const sig = cs.map(c => `${c.id}:${Math.round(c.mood / 4)}:${Math.round(c.hp / c.maxHp * 10)}:${c.away ? 1 : 0}:${labourOf(c)}:${this.squad.has(c.id) ? 1 : 0}:${c.mapId || 0}:${c.hold ? 1 : 0}:${c.downed ? 1 : 0}`).join('|');
     if (this.sigs.colbar === sig) return;
     this.sigs.colbar = sig;
-    $('#colbar').innerHTML = cs.map(c => {
+    const bar = $('#colbar');
+    if (!bar.dataset.hov) {
+      // Hovering a portrait lights that colonist up on the map.
+      bar.dataset.hov = '1';
+      bar.addEventListener('mouseover', (e) => { const cb = e.target.closest && e.target.closest('.cb'); this.renderer.barHover = cb ? +cb.dataset.id : null; });
+      bar.addEventListener('mouseleave', () => { this.renderer.barHover = null; });
+    }
+    bar.innerHTML = cs.map(c => {
       const m = moodStatus(c.mood);
       const lost = 1 - c.hp / c.maxHp;
       return `<div class="cb${this.squad.has(c.id) ? ' sel' : ''}${c.away ? ' away' : ''}${c.mood < 20 && !c.away ? ' brk' : ''}"
@@ -22268,7 +22616,15 @@ class UI {
     const shopHead = (id, name, icon, every) => {
       const lv = builtLevel(g, id);
       const days = S[id] ? Math.max(0, every - (g.day - S[id].day)) : 0;
-      return sect(`${icon} ${name} <span class="lvl">L${lv}</span>`, S[id] ? `restocks in ${days || 1} day${days === 1 ? '' : 's'}` : 'stocks at dawn');
+      const st = shopStatus(g, id);
+      const head = sect(`${icon} ${name} <span class="lvl">L${lv}</span>${st.open ? ' <span class="badge good">Open</span>' : ' <span class="badge bad">Shut</span>'}`,
+        S[id] ? `restocks in ${days || 1} day${days === 1 ? '' : 's'}` : 'stocks at dawn');
+      if (st.open) return head;
+      // A shut counter still shows its shelves, so you know what's waiting.
+      const box = el('div');
+      box.appendChild(head);
+      box.appendChild(el('div', 'mini shop-desc shop-shut', `🔴 ${esc(st.why)}`));
+      return box;
     };
     if (builtLevel(g, 'armory')) {
       wrap.appendChild(shopHead('armory', 'Armory', '🛡️', 5));
@@ -23096,6 +23452,23 @@ class UI {
         btn.onclick = () => { const r = orderUpgrade(g, x, y); if (r) this.toast(r, 'warn'); this.sigs.insp = null; this.renderInspector(); };
         box.appendChild(btn);
       }
+    }
+    if (bd && bd.done && KEPT_SHOPS.has(bd.id)) {
+      // Nobody behind the counter, no trade: pick who keeps it.
+      const keeper = keeperOf(g.root, bd), open = keptNow(g.root, bd);
+      box.appendChild(el('div', 'sect', 'Shopkeeper'));
+      const row = el('label', 'row handler');
+      row.innerHTML = `<span class="k">🧑‍💼 Keeper</span>`;
+      const sel = document.createElement('select');
+      sel.innerHTML = `<option value="">Nobody — the shop stays shut</option>`
+        + g.root.colonists.filter(c => !c.dead).map(c => `<option value="${c.id}"${bd.keeper === c.id ? ' selected' : ''}>${esc(c.name.short)} · ${esc(c.title || CLASSES[c.klass].name)}</option>`).join('');
+      sel.onchange = () => { assignKeeper(g, bd, sel.value ? +sel.value : null); this.sigs.insp = null; this.renderInspector(); this.sigs.drawer = null; this.renderDrawer(); };
+      row.appendChild(sel);
+      box.appendChild(row);
+      box.appendChild(el('div', 'mini', !keeper
+        ? 'Shut. Assign a keeper and they’ll mind the counter through the day; the shop trades only while they’re there.'
+        : open ? `🟢 Open — ${esc(keeper.name.short)} is at the counter.`
+          : `🔴 Shut — ${g.root.isNight ? 'closed for the night.' : `waiting for ${esc(keeper.name.short)} to get to the counter.`}`));
     }
     if (bd && bd.done && (BUILDINGS[bd.id].shop || bd.id === 'tavern' || bd.id === 'temple')) {
       add(BUILDINGS[bd.id].shop === 'trading_post' || BUILDINGS[bd.id].shop === 'counting_house' || bd.id === 'tavern' || bd.id === 'temple' ? '🪙 Services' : '🪙 Open the Market',

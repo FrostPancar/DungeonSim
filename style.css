@@ -116,6 +116,17 @@ button.act.big{min-height:38px;padding:6px 20px;font-size:14px;margin:0}
 #res{position:absolute;left:6px;top:6px;z-index:20;display:flex;flex-direction:column;padding:4px 0;
   background:rgba(12,14,17,.74);border:1px solid rgba(255,255,255,.07);border-radius:var(--r2);
   -webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);pointer-events:auto;user-select:none}
+#rsch{position:absolute;left:120px;top:6px;z-index:20;min-width:150px;max-width:220px;padding:6px 9px 7px;
+  background:rgba(12,14,17,.74);border:1px solid rgba(255,255,255,.07);border-radius:var(--r2);cursor:var(--cur-hand);
+  -webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);pointer-events:auto;user-select:none;font-size:12px}
+#rsch:hover{border-color:rgba(255,255,255,.18)}
+#rsch.none{border-color:rgba(232,179,71,.5)}
+#rsch .rs-h{display:flex;align-items:center;gap:6px}
+#rsch .rs-h b{flex:1;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#rsch .rs-p{font-variant-numeric:tabular-nums;color:var(--hi)}
+#rsch u{display:block;height:4px;margin-top:5px;border-radius:2px;background:rgba(255,255,255,.08);overflow:hidden;text-decoration:none}
+#rsch u s{display:block;height:100%;background:#7aa8e0;text-decoration:none}
+#rsch .rs-q{margin-top:4px;font-size:11px;color:var(--ink2,#9aa3ad)}
 .rr{display:flex;align-items:center;gap:7px;padding:1px 9px 1px 6px;min-width:100px;font-variant-numeric:tabular-nums;cursor:var(--cur-arrow)}
 .rr:hover{background:var(--s3)}
 .rr .ci{width:18px;text-align:center;font-size:13px}
@@ -1283,3 +1294,16 @@ button.act.small{min-height:22px;padding:1px 7px;font-size:11.5px;margin:0}
 .forge-grid .act{width:100%;font-size:10.5px;padding:2px 3px;white-space:nowrap;overflow:hidden}
 .lvl-pips{color:var(--hi);letter-spacing:1px}
 .need{color:var(--warn)}
+
+/* Right-click menu: every way the selection can deal with what was clicked. */
+.ctxmenu{position:fixed;z-index:80;min-width:200px;max-width:300px;padding:4px;display:flex;flex-direction:column;gap:1px;
+  background:rgba(18,21,25,.97);border:1px solid rgba(255,255,255,.12);border-radius:var(--r2);box-shadow:0 8px 24px rgba(0,0,0,.55)}
+.ctxmenu.hidden{display:none}
+.ctxmenu .cm-it{display:flex;align-items:center;gap:8px;padding:6px 8px;border:0;border-radius:6px;background:transparent;color:var(--ink);
+  font:inherit;font-size:12.5px;text-align:left;cursor:var(--cur-hand)}
+.ctxmenu .cm-it:hover{background:var(--s3)}
+.ctxmenu .cm-it span:nth-child(2){flex:1}
+.ctxmenu .cm-ic{width:18px;text-align:center}
+.ctxmenu .cm-it.good span:nth-child(2){color:#c3eab6}
+.ctxmenu .cm-it.danger span:nth-child(2){color:#ffb9ab}
+.ctxmenu kbd{font:10px ui-monospace,monospace;color:var(--ink2,#9aa3ad);border:1px solid rgba(255,255,255,.15);border-radius:3px;padding:0 4px}

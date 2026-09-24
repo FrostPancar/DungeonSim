@@ -333,7 +333,7 @@ export function tickRaiders(game) {
     r.stamina = Math.max(0, r.stamina - 0.05);   // a night of marching and killing wears even these down
     r.moveCd = (r.moveCd || 0) - 1;
     if (r.moveCd > 0) continue;
-    r.moveCd = r.stamina < 20 ? 5 : 3;
+    r.moveCd += r.stamina < 20 ? 4.3 : 2.6;   // fractions carry over, so the pace is even
     // Beaten and running: back into the Rift (or off the map), and gone.
     if (r.fleeing) {
       const home = r.riftSpawn && mouth ? mouth : edgeSpawn(game);

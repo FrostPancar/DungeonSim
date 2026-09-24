@@ -1,7 +1,7 @@
 // ============================================================================
 // GAME: state container and master tick. Headless — no DOM references.
 // ============================================================================
-import { economyDawn, economyHour, forgeTier, orderUpgrade } from './economy.js';
+import { economyDawn, economyHour, forgeTier, orderUpgrade, shopStatus } from './economy.js';
 import { RNG, clamp } from './rng.js';
 import { RESEARCH, BUILDINGS, RACES, CLASSES, RESOURCE_IDS, SKILL_IDS, dispositionOf, ABILITIES } from './data.js';
 import { World, findPath } from './world.js';
@@ -874,6 +874,7 @@ export class Game {
   /** Buy from the peddler ('peddler') or the spellmason ('spellmason'). kind: scrolls|books|potions|reagents */
   buyMagic(from, kind, id) {
     const shop = from === 'peddler' ? this.peddler && this.peddler.stock : this.spellmasonStock;
+    if (from === 'spellmason') { const st = shopStatus(this, 'spellmason'); if (!st.open) return st.why; }
     if (!shop || !(shop[kind][id] > 0)) return 'Not in stock.';
     const price = kind === 'books' ? bookPrice(id) : kind === 'scrolls' ? scrollPrice(id) : kind === 'reagents' ? (id === 'class_tome' ? 400 : 25) : 30;
     const cost = Math.round(price * (from === 'spellmason' ? 1.1 : 1));
@@ -888,7 +889,7 @@ export class Game {
   }
   /** The spellmason copies a book you own. */
   copyBook(id) {
-    if (!this.world.findBuildings('spellmason').length) return 'Needs a spellmason.';
+    { const st = shopStatus(this, 'spellmason'); if (!st.open) return st.why; }
     if (!(this.library.books[id] > 0)) return 'You need a copy to copy.';
     const cost = { dust: 5, cloth: 3, gold: Math.round(bookPrice(id) * 0.3) };
     for (const [k, v] of Object.entries(cost)) if ((this.resources[k] || 0) < v) return `Needs ${v} ${k}.`;
@@ -897,7 +898,7 @@ export class Game {
     return '';
   }
   sellBook(id) {
-    if (!this.world.findBuildings('spellmason').length) return 'Needs a spellmason.';
+    { const st = shopStatus(this, 'spellmason'); if (!st.open) return st.why; }
     if (!(this.library.books[id] > 0)) return 'Nothing to sell.';
     this.library.books[id]--;
     this.resources.gold = (this.resources.gold || 0) + Math.round(bookPrice(id) * 0.4);
@@ -1059,6 +1060,32 @@ export class Game {
   suggestCrop(x, y) { return recommendCrop(this.farmContext(x, y)); }
 
   /** Mark a tamed beast for slaughter. */
+  /** Send the best animal-handler of a selection to tame a wild beast now. Returns who went. */
+  orderTame(ids, beastId) {
+    const b = this.beasts.find(k => k.id === beastId && !k.dead && !k.tame);
+    if (!b) return null;
+    const able = ids.map(id => this.colonists.find(c => c.id === id && !c.dead && !c.downed && !c.away)).filter(Boolean);
+    if (!able.length) return null;
+    able.sort((p, q) => (q.skills.animals || 0) - (p.skills.animals || 0) || Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y));
+    const c = able[0], work = ANIMALS[b.species].wildAggressive ? 110 : 70;
+    c.order = null; c.path = null;
+    c.task = { kind: 'tame', x: b.x, y: b.y, work, workLeft: work, skill: 'animals', beastId: b.id, claim: c.id, ordered: true };
+    return c;
+  }
+  /** Hunt a beast: everyone selected closes on it and strikes until it drops. */
+  orderHunt(ids, beastId) {
+    const b = this.beasts.find(k => k.id === beastId && !k.dead);
+    if (!b) return 0;
+    let n = 0;
+    for (const id of ids) {
+      const c = this.colonists.find(k => k.id === id && !k.dead && !k.downed && !k.away);
+      if (!c) continue;
+      c.order = null; c.path = null;
+      c.task = { kind: 'hunt', x: b.x, y: b.y, work: 16, workLeft: 16, skill: 'melee', beastId: b.id, ordered: true };
+      n++;
+    }
+    return n;
+  }
   markButcher(beastId) {
     const b = this.beasts.find(x => x.id === beastId);
     if (!b || !b.tame) return false;

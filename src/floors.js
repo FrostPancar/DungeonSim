@@ -512,7 +512,7 @@ export function tickFloorMonsters(v) {
       }
     }
     if (r.moveCd > 0) continue;
-    r.moveCd = 3;
+    r.moveCd += 2.6;   // fractions carry over, so the pace is even
     // Broke and ran: back to the post, and settle down again once there.
     if (r.fleeing) {
       if (!r.home || (r.x === r.home.x && r.y === r.home.y) || v.tick > r.fleeing) { r.fleeing = 0; r.awake = false; continue; }

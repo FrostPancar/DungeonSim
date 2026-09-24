@@ -189,6 +189,47 @@ export const SHOPS = {
 };
 export function shopsOf(root) { return root.shops || (root.shops = {}); }
 
+// --- shopkeepers ------------------------------------------------------------------
+// A shop you build only trades while someone is behind its counter: assign a
+// colonist as its keeper (from the building) and they mind it through the day.
+// Night, a keeper off eating or sleeping, or no keeper at all: the shop is shut.
+export const KEPT_SHOPS = new Set(['armory', 'apothecary', 'stable', 'tavern', 'spellmason']);
+/** Is someone minding this counter right now? Kept for a moment after they step away. */
+export function keptNow(root, b) { return (b.keptUntil || 0) >= root.tick; }
+/** Whether a shop building of this id is open, and if not, why not. */
+export function shopStatus(game, bid) {
+  const root = game.root, name = BUILDINGS[bid].name;
+  const recs = root.world.findBuildings(bid).filter(r => r.b.done);
+  if (!recs.length) return { open: false, why: `Needs a${/^[AEIOU]/.test(name) ? 'n' : ''} ${name}.` };
+  if (!KEPT_SHOPS.has(bid)) return { open: true };
+  for (const r of recs) if (keptNow(root, r.b)) return { open: true, keeper: root.colonists.find(c => c.id === r.b.keeper) || null };
+  const r = recs.find(r => keeperOf(root, r.b));
+  if (r) return { open: false, why: `The ${name} is shut: ${keeperOf(root, r.b).name.short} isn't at the counter${root.isNight ? ' at night' : ' yet'}.` };
+  return { open: false, why: `The ${name} has no shopkeeper. Click it and assign someone to mind the counter.` };
+}
+/** The living colonist assigned to keep this building's counter, if any. */
+export function keeperOf(root, b) {
+  if (b.keeper == null) return null;
+  const c = root.colonists.find(k => k.id === b.keeper && !k.dead);
+  return c || null;
+}
+/** Put a colonist behind a shop's counter (null to relieve whoever is there). One shop each. */
+export function assignKeeper(game, b, npcId) {
+  const root = game.root;
+  if (npcId != null) for (const r of root.world.findBuildings()) if (r.b !== b && r.b.keeper === npcId) r.b.keeper = null;
+  b.keeper = npcId;
+  b.keptUntil = 0;
+  const c = npcId != null ? root.colonists.find(k => k.id === npcId) : null;
+  if (c) { c.task = null; c.path = null; root.log(`${c.name.short} now keeps the ${BUILDINGS[b.id].name}.`, 'info', c.id); }
+  return c;
+}
+/** A counter's stock object, if `from` is one of the shops you built: '' if open, else why not. */
+function counterShut(game, from) {
+  const S = shopsOf(game.root);
+  for (const id in SHOPS) if (S[id] && S[id] === from) { const st = shopStatus(game, SHOPS[id].building); return st.open ? '' : st.why; }
+  return '';
+}
+
 /** What an item sells for at a counter, and what the counter pays for it. */
 export function itemPrice(item) { return Math.max(10, Math.round((item.value || 10) * 3.2)); }
 export function itemBuyback(item) { return Math.max(2, Math.round(itemPrice(item) * 0.35)); }
@@ -269,6 +310,7 @@ export function tickShops(game) {
 
 /** Buy the `i`th item off a counter or a trader's table. `from`: a stock object with `.items`. */
 export function buyItem(game, from, i, cat = 'shops') {
+  const shut = counterShut(game, from); if (shut) return shut;
   const it = from && from.items && from.items[i];
   if (!it) return 'Not in stock.';
   const price = it.commission ? it.balance : itemPrice(it);
@@ -290,6 +332,7 @@ export function sellItem(game, armoryIdx) {
   return '';
 }
 export function buyPotion(game, from, id, cat = 'shops') {
+  const shut = counterShut(game, from); if (shut) return shut;
   if (!from || !(from.potions && from.potions[id] > 0)) return 'Not in stock.';
   const price = Math.round(potionPrice(id) * (from.mult || 1));
   if (!pay(game, price, cat)) return `Costs ${price} gold.`;
@@ -306,6 +349,7 @@ export function sellPotion(game, id) {
   return '';
 }
 export function buyBeast(game, from, i, cat = 'shops') {
+  const shut = counterShut(game, from); if (shut) return shut;
   const b = from && from.beasts && from.beasts[i];
   if (!b) return 'Not in stock.';
   const price = beastPrice(b);
@@ -319,6 +363,7 @@ export function buyBeast(game, from, i, cat = 'shops') {
 }
 /** Sign on a sellsword: they fight like anyone of ours, for a daily wage. */
 export function hireMerc(game, from, i, cat = 'mercs') {
+  const shut = counterShut(game, from); if (shut) return shut;
   const npc = from && from.mercs && from.mercs[i];
   if (!npc) return 'Nobody to hire.';
   const fee = mercFee(npc);

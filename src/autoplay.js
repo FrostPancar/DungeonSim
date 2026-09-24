@@ -17,7 +17,7 @@ import { CROPS } from './farming.js';
 import { makeTierItem } from './items.js';
 import {
   forgeBlocker, forgeCost, forgeTier, familyFor, shopsOf, itemPrice, buyItem, potionPrice, buyPotion,
-  levelOf, MAX_LEVEL, upgradeCost, orderUpgrade, bless, festival,
+  levelOf, MAX_LEVEL, upgradeCost, orderUpgrade, bless, festival, KEPT_SHOPS, keeperOf, assignKeeper,
 } from './economy.js';
 
 const RESEARCH_ORDER = ['masonry', 'husbandry', 'agriculture', 'letters', 'smelting', 'commerce', 'ranching', 'logistics', 'arcana1', 'herbalism', 'grand_works', 'cartography', 'drill_corps', 'coinage', 'stockbreed', 'drilling', 'devotion', 'wardstone', 'deepmaps', 'relicry'];
@@ -89,11 +89,25 @@ function countPlanned(game, id) {
   return n;
 }
 
-export function autoplayStep(game) {
+/**
+ * `opts.build`: whether the governor also chooses what to build. The in-game
+ * Auto button leaves building to the player; the headless tests let it build.
+ */
+export function autoplayStep(game, opts = {}) {
+  const build = opts.build !== false;
   if (game.tick % 40 !== 0) return;
   const w = game.world;
   const rng = game.rng;
   const res = game.resources;
+
+  // --- shopkeepers: every shop gets someone behind the counter, peasants first ---
+  for (const rec of w.findBuildings()) {
+    if (!KEPT_SHOPS.has(rec.b.id) || keeperOf(game.root, rec.b)) continue;
+    const keeping = new Set(w.findBuildings().map(r => r.b.keeper).filter(k => k != null));
+    const pick = game.colonists.filter(c => !c.dead && !c.away && !c.merc && !keeping.has(c.id))
+      .sort((a, b) => (b.peasant ? 1 : 0) - (a.peasant ? 1 : 0) || a.level - b.level)[0];
+    if (pick) assignKeeper(game, rec.b, pick.id);
+  }
 
   // --- skill trees: the autopilot spends every point as it comes ---
   game.autoSkills = true;
@@ -181,7 +195,7 @@ export function autoplayStep(game) {
   }
 
   // --- construction ---
-  for (const [id, target] of wants(game)) {
+  if (build) for (const [id, target] of wants(game)) {
     if (!target) continue;
     if (!game.unlocked.has(id)) continue;
     if (countPlanned(game, id) >= target) continue;

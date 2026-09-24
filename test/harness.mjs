@@ -254,6 +254,52 @@ describe('Overworld', () => {
     'deserts are sandy and marshes are wet');
   const gb = new Game('camp-biome');
   ok(gb.world.biome === gb.biome, 'the camp map is generated for the run\'s biome', gb.biome);
+  // Big buildings: one record over the whole footprint, walled with a door.
+  {
+    const gb = new Game('big-buildings');
+    const w = gb.world;
+    let spot = null;
+    for (let r = 5; r < 20 && !spot; r++) for (let dx = -r; dx <= r && !spot; dx++) if (w.canPlace('apothecary', w.start.x + dx, w.start.y + r)) spot = [w.start.x + dx, w.start.y + r];
+    gb.unlocked.add('apothecary');
+    ok(!!spot && gb.build(spot[0], spot[1], 'apothecary'), 'a 3x2 shop can be placed');
+    const b = w.buildingAt(spot[0], spot[1]);
+    const tiles = w.building.filter(x => x === b).length;
+    ok(b.fp && b.fp[2] === 3 && b.fp[3] === 2 && tiles === 6, 'it covers all six tiles as one building', `${tiles} tiles`);
+    ok(!gb.build(spot[0], spot[1], 'apothecary') && !w.canPlace('library', spot[0] + 1, spot[1]), 'nothing else can go on top of it');
+    gb.resources.gold = 999; gb.resources.herbs = 99; gb.resources.wood = 999; gb.resources.stone = 999;
+    for (let i = 0; i < 6000 && !b.done; i++) gb.step();
+    const door = w.doorOf(b);
+    ok(b.done, 'colonists build it');
+    ok(w.walkable(door.x, door.y) && !w.walkable(b.fp[0], b.fp[1]) && !w.walkable(b.fp[0] + 2, b.fp[1] + 1), 'it comes with walls: solid all round but for the door');
+    ok(w.findBuildings('apothecary').length === 1 && w.findBuildings('apothecary')[0].x === door.x, 'it counts once, and is used from its door');
+    ok(gb.colonists.every(c => c.away || w.walkable(c.x, c.y)), 'nobody is left walled inside');
+    w.removeBuilding(b.fp[0] + 1, b.fp[1]);
+    ok(!w.building.some(x => x === b), 'removing any tile of it removes all of it');
+  }
+  // Shopkeepers: a shop trades only while its keeper minds the counter.
+  {
+    const gs = new Game('keepers');
+    const w = gs.world;
+    let spot = null;
+    for (let r = 5; r < 20 && !spot; r++) for (let dx = -r; dx <= r && !spot; dx++) if (w.canPlace('apothecary', w.start.x + dx, w.start.y + r)) spot = [w.start.x + dx, w.start.y + r];
+    const b = w.putBuilding('apothecary', spot[0], spot[1], { id: 'apothecary', done: true, workLeft: 0, hp: 120, growth: 0, progress: 0, reservedBy: 0 });
+    w.recomputeLight(); gs.jobsDirty = true;
+    ECON.tickShops(gs);
+    const S = ECON.shopsOf(gs);
+    gs.resources.gold = 5000;
+    const pot = Object.keys(S.apothecary.potions)[0];
+    ok(!ECON.shopStatus(gs, 'apothecary').open && /shopkeeper/.test(ECON.buyPotion(gs, S.apothecary, pot)), 'no keeper: the shop is shut');
+    const keeper = gs.colonists.find(c => c.peasant);
+    ECON.assignKeeper(gs, b, keeper.id);
+    let t = 0;
+    while (!ECON.keptNow(gs, b) && t++ < 1500) { keeper.needs.hunger = Math.max(keeper.needs.hunger, 0.7); keeper.needs.rest = Math.max(keeper.needs.rest, 0.7); keeper.needs.joy = Math.max(keeper.needs.joy, 0.7); gs.step(); }
+    ok(ECON.keptNow(gs, b), 'the keeper walks to the counter and opens up', `after ${t} ticks`);
+    ok(Math.abs(keeper.x - w.doorOf(b).x) <= 1 && Math.abs(keeper.y - w.doorOf(b).y) <= 1, 'they stand at the shop door');
+    ok(pot && ECON.buyPotion(gs, S.apothecary, pot) === '', 'with the keeper in, it sells');
+    while (!gs.isNight) gs.step();
+    for (let i = 0; i < 200; i++) gs.step();
+    ok(!ECON.shopStatus(gs, 'apothecary').open, 'it shuts for the night');
+  }
   ok(!('_siteGrid' in big),'generation scratch state is not left on the map (or in saves)');
 
   const ow = new Overworld('ow-detail');
@@ -272,6 +318,70 @@ describe('Overworld', () => {
   const settlements = ow.sites.filter(s => SITE_KINDS[s.kind].trade);
   ok(settlements.every(s => s.stock && Object.keys(s.stock).length > 0), 'every settlement produces something to trade');
   ok(settlements.every(s => s.hostility >= 0 && s.hostility <= 100), 'settlements sit on the same hostility meter as people');
+});
+
+describe('Colonists on their own', () => {
+  // Nobody sits idle: with nothing queued, a colonist finds useful work.
+  {
+    const g = new Game('self-work');
+    const w = g.world;
+    w.designation.fill(null);
+    g.resources.wood = 0; g.jobsDirty = true;
+    const worker = g.colonists.find(c => c.peasant);
+    let found = null;
+    for (let i = 0; i < 400 && !found; i++) {
+      for (const c of g.colonists) { c.needs.hunger = c.needs.rest = c.needs.joy = 1; }
+      g.step();
+      found = g.colonists.find(c => c.task && c.task.self);
+    }
+    ok(!!found, 'an idle colonist picks up useful work on their own', found ? `${found.name.short}: ${found.task.kind}` : 'none');
+    ok(!!found && w.designation[w.idx(found.task.x, found.task.y)], 'and marks it, so others can help');
+    const bp = () => new Set(g.world.building.filter(b => b && !b.done)).size;
+    const before = bp();
+    g.resources.wood = g.resources.stone = g.resources.gold = 999;
+    for (let i = 0; i < TICKS_PER_DAY; i++) { autoplayStep(g, { build: false }); g.step(); }
+    ok(bp() === before && g.world.findBuildings().length === new Game('self-work').world.findBuildings().length, 'Auto mode leaves building to the player');
+    void worker;
+  }
+  // Beasts: a wild one can be tamed or hunted on command.
+  {
+    const g = new Game('hunt');
+    const w = g.world;
+    const c = g.colonists[0];
+    const spot = findNearest(w, c.x + 3, c.y, (x, y) => w.walkable(x, y) && !g.colonists.some(k => k.x === x && k.y === y), 6);
+    const beast = createBeast(g.rng.fork('hb'), 'cavegoat', { tame: false });
+    beast.x = spot[0]; beast.y = spot[1]; beast.moveCd = 1e9;
+    g.beasts.push(beast);
+    ok(g.orderHunt([c.id], beast.id) === 1 && c.task.kind === 'hunt', 'a hunt can be ordered');
+    const ground = g.ground.length;
+    for (let i = 0; i < 1500 && !beast.dead; i++) { c.needs.hunger = c.needs.rest = 1; g.step(); }
+    ok(beast.dead && g.ground.length > ground, 'the hunter brings it down, for meat and hide', `dead ${beast.dead}`);
+    const wild = createBeast(g.rng.fork('tb'), 'woolback', { tame: false });
+    wild.x = spot[0]; wild.y = spot[1]; wild.moveCd = 1e9;
+    g.beasts.push(wild);
+    const tamer = g.orderTame(g.colonists.map(k => k.id), wild.id);
+    ok(tamer && tamer.task.kind === 'tame' && tamer.task.beastId === wild.id, 'taming goes to whoever is best with animals');
+  }
+  // A friend blocking a one-wide passage: trade places rather than wait forever.
+  {
+    const g = new Game('swap');
+    const w = g.world;
+    const [a, b] = g.colonists;
+    const x0 = w.start.x - 3, y0 = w.start.y + 12;
+    for (let x = x0 - 1; x <= x0 + 7; x++) for (const y of [y0 - 1, y0, y0 + 1]) {
+      const i = w.idx(x, y);
+      w.terrain[i] = y === y0 && x >= x0 && x <= x0 + 6 ? T.DIRT : T.ROCK;
+      w.feature[i] = null; w.building[i] = null; w.designation[i] = null;
+    }
+    w.touch(); g.jobsDirty = true;
+    for (const c of g.colonists) if (c !== a && c !== b) c.x = w.start.x, c.y = w.start.y;
+    a.x = x0; a.y = y0; b.x = x0 + 2; b.y = y0; b.hold = true;
+    g.occ = null;
+    g.orderMove([a.id], x0 + 5, y0);
+    let t = 0;
+    while (!(a.x === x0 + 5 && a.y === y0) && t++ < 400) { for (const c of g.colonists) { c.needs.hunger = c.needs.rest = c.needs.joy = 1; } g.step(); }
+    ok(a.x === x0 + 5 && a.y === y0, 'a colonist gets past a friend in a narrow passage by trading places', `after ${t} ticks`);
+  }
 });
 
 describe('Farming', () => {
@@ -1519,6 +1629,13 @@ describe('Gold: shops, forge tiers, upgrades and services', () => {
   const S = ECON.shopsOf(g);
   ok(S.armory && S.armory.items.length === 6, 'the Armory stocks more at level 2', S.armory && S.armory.items.length);
   g.resources.gold = 5000;
+  // Nobody behind the counters yet: nothing is sold.
+  ok(/shopkeeper/.test(ECON.buyItem(g, S.armory, 0)) && S.armory.items.length === 6, 'a shop with no keeper won\'t trade');
+  ['armory', 'apothecary', 'stable', 'tavern'].forEach((id, k) => {
+    const r = g.world.findBuildings(id)[0];
+    ECON.assignKeeper(g, r.b, g.colonists[k].id);
+    r.b.keptUntil = g.tick + 1e6;   // as if they were at the counter
+  });
   const it = S.armory.items[0], n = g.armory.length;
   ok(ECON.buyItem(g, S.armory, 0) === '' && g.armory.length === n + 1 && g.resources.gold === 5000 - ECON.itemPrice(it), 'buying from the Armory puts the piece in your armory');
   ok(ECON.sellItem(g, g.armory.length - 1) === '' && g.resources.gold === 5000 - ECON.itemPrice(it) + ECON.itemBuyback(it), 'and it sells back for about a third');
@@ -1557,13 +1674,14 @@ describe('Gold: shops, forge tiers, upgrades and services', () => {
   ok(ECON.vaultSafe(g) === 800, 'a level-2 Counting House keeps 800 gold safe from raiders');
   // Journeys: a party goes, and comes back with a recruit.
   const ow = g.overworld;
-  const site = ow.sites.find(s2 => SITE_KINDS[s2.kind].trade);
+  // The nearest trading settlement: on the big region map the first one listed can be a week away.
+  const site = ow.sites.filter(s2 => SITE_KINDS[s2.kind].trade).sort((a, b) => a.dist - b.dist)[0];
   site.discovered = true; site.hostility = 20;
   const who = g.colonists.find(c => c !== knight && !c.merc && !c.dead);
   const pop = g.colonists.length;
   ok(ECON.sendJourney(g, [who.id], site.id, 'recruit') === '' && who.away, 'a party sets out for a settlement');
   for (let k = 0; k < 20000 && who.away; k++) g.step();
-  ok(!who.away && g.colonists.length === pop + 1, 'and comes back with a recruit', `pop ${pop} → ${g.colonists.length}`);
+  ok(!who.away && g.colonists.length === pop + 1, 'and comes back with a recruit', `pop ${pop} → ${g.colonists.length} · away ${who.away} · died ${g.graveyard.length} · site ${Math.round(site.dist)} leagues`);
   // Rift merchants: neutral until robbed; vaults need a key.
   const m = g.ensureFloor(2), v = g.viewOf(m);
   const rng = new RNG('merch');
@@ -1844,7 +1962,7 @@ describe('New buildings: defense, decor and research', () => {
   // Archery Range always trains ranged; the plain Training Dummy is a coin flip.
   const t = new Game('archery-test');
   const [ax, ay] = findNearest(t.world, t.world.start.x, t.world.start.y,
-    (x, y) => t.world.walkable(x, y) && !t.world.building[t.world.idx(x, y)] && !t.world.feature[t.world.idx(x, y)], 15) || [t.world.start.x, t.world.start.y];
+    (x, y) => t.world.canPlace('archery_range', x, y), 15) || [t.world.start.x, t.world.start.y];
   t.unlocked.add('archery_range');
   ok(t.build(ax, ay, 'archery_range'), 'an archery range can be queued');
   const arI = t.world.idx(ax, ay);
