@@ -6,7 +6,7 @@
 import { Game, STANCES, TICKS_PER_DAY, historyDay, RIFT_RANKS, RIFT_DAYS_PER_LEVEL } from './game.js';
 import { packCap, moodBreakdown } from './colony.js';
 import { clamp } from './rng.js';
-import { Renderer, drawOverworld, overworldHit, TILE_MIN, TILE_MAX, tileThumb } from './render.js';
+import { Renderer, drawOverworld, overworldHit, TILE_MIN, TILE_MAX, tileThumb, biomeThumb } from './render.js';
 import { DAMAGE_TYPES, TAGS, STATUSES } from './elements.js';
 import { MONSTERS, MONSTER_IDS, FAMILIES, FAMILY_IDS, ESSENCES, TROPHIES, ENCOUNTERS, createMonster, bestiaryKnowledge } from './monsters.js';
 import { RARITIES, SLOTS, SLOT_NAMES, SLOT_ICONS, POTIONS, POTION_IDS, LEGENDARIES, LEGENDARY_RECIPES, canEquip, itemScore, FORGE_TIERS, FORGE_SLOTS } from './items.js';
@@ -20,7 +20,7 @@ import {
   BUILDINGS, FLOORS, RESOURCES, SKILLS, SKILL_IDS, TRAITS, RACES, CLASSES, ATTRS, ATTR_NAMES,
   RESEARCH, dispositionOf, THOUGHTS, ABILITIES, DUNGEON_THEMES,
 } from './data.js';
-import { TERRAIN, FEATURES, findPath } from './world.js';
+import { TERRAIN, FEATURES, findPath, CAMP_TERRAIN } from './world.js';
 import { kw, kwList, kwCost, traitSentiment } from './keywords.js';
 import { noteTutorialEvent, currentStep, stepText, advanceTutorial, skipTutorialState, restartTutorialState, tutorialState, TUTORIAL_STEPS } from './tutorial.js';
 
@@ -270,9 +270,9 @@ export class UI {
     }
   }
 
-  newGame(seed) {
+  newGame(seed, biome = null) {
     this.seed = seed || Math.random().toString(36).slice(2, 9);
-    this.game = new Game(this.seed);
+    this.game = new Game(this.seed, biome ? { biome } : {});
     if (this.renderer) { this.renderer.game = this.game; this.renderer.cacheVersion = -1; this.renderer.selection = null; this.renderer.camX = this.game.world.start.x; this.renderer.camY = this.game.world.start.y; }
     this.lastLogLen = 0;
     this.sel = null;
@@ -4624,8 +4624,8 @@ export class UI {
   }
 
   /** A new colony in slot n: generate, save straight away so the slot is claimed. */
-  startNewInSlot(n, seed, name) {
-    this.newGame(seed || undefined);
+  startNewInSlot(n, seed, name, biome = null) {
+    this.newGame(seed || undefined, biome);
     this.installGame(this.game);
     this.slot = n;
     this.colonyName = name || null;
@@ -4711,25 +4711,55 @@ export class UI {
     this.renderTop();
   }
 
-  /** New colony: a name and, for the curious, a seed. */
+  /** The biomes a camp can be pitched in, with a few words on what each means for the colony. */
+  static startBiomes() {
+    return Object.keys(BIOMES).filter(id => id !== 'ocean').map(id => {
+      const B = BIOMES[id], C = CAMP_TERRAIN[id] || {};
+      const notes = [
+        B.fertility >= 0.7 ? ['🌱 Rich soil', 'good'] : B.fertility >= 0.4 ? ['🌱 Fair soil', ''] : ['🌱 Poor soil', 'bad'],
+        (C.trees || 0) >= 0.15 ? ['🪵 Thick woods', 'good'] : (C.trees || 0) >= 0.04 ? ['🪵 Some trees', ''] : ['🪵 Little wood', 'bad'],
+        B.danger >= 0.9 ? ['⚠️ Dangerous', 'bad'] : B.danger <= 0.3 ? ['🕊️ Calm', 'good'] : null,
+        C.rim ? ['⛰️ Walled in by cliffs', ''] : null,
+      ].filter(Boolean);
+      return { id, name: B.name, notes };
+    });
+  }
+
+  /** New colony: a name, where to pitch camp, and, for the curious, a seed. */
   showNewColony(n) {
     const box = $('#title');
+    let pick = null;              // null: the seed's own region decides
+    const card = (id, name, pic, notes) => `<button class="nc-biome${pick === id ? ' on' : ''}" data-biome="${id || ''}" aria-pressed="${pick === id}">
+        <span class="nc-pic">${pic}</span><b>${esc(name)}</b>
+        <span class="nc-notes">${notes.map(([t, k]) => `<i class="${k}">${t}</i>`).join('')}</span></button>`;
+    const biomes = UI.startBiomes();
     box.innerHTML = `<div class="ts-wrap">
         <div class="ts-logo small">New colony</div>
         <div class="ts-tag">Slot ${n}</div>
-        <div class="ts-form">
+        <div class="ts-form nc-form">
           <label>Name <input id="nc-name" maxlength="28" placeholder="The Camp at the Gate"></label>
+          <div class="nc-h">Where to pitch camp</div>
+          <div class="nc-biomes">
+            ${card(null, 'Random', '<span class="nc-dice">🎲</span>', [['The seed decides', '']])}
+            ${biomes.map(b => { const url = biomeThumb(b.id); return card(b.id, b.name, url ? `<img src="${url}" alt="">` : '', b.notes); }).join('')}
+          </div>
           <label>Seed <input id="nc-seed" maxlength="24" placeholder="random"></label>
-          <div class="mini">The same seed gives the same region, the same Rift and the same first colonists.</div>
+          <div class="mini">The same seed gives the same region, the same Rift and the same first colonists. Pick a biome and the camp's own map is that biome whatever the seed.</div>
           <div class="ts-acts"><button class="act" data-act="back">Back</button><button class="act primary" data-act="go">Pitch camp</button></div>
         </div>
       </div>`;
     box.onclick = (e) => {
+      const bb = e.target.closest && e.target.closest('[data-biome]');
+      if (bb) {
+        pick = bb.dataset.biome || null;
+        for (const c of box.querySelectorAll('[data-biome]')) { const on = (c.dataset.biome || null) === pick; c.classList.toggle('on', on); c.setAttribute('aria-pressed', on); }
+        return;
+      }
       const b = e.target.closest && e.target.closest('button'); if (!b) return;
       if (b.dataset.act === 'back') { this.showTitle(); return; }
       if (b.dataset.act === 'go') {
         const name = ($('#nc-name').value || '').trim(), seed = ($('#nc-seed').value || '').trim();
-        this.startNewInSlot(n, seed, name);
+        this.startNewInSlot(n, seed, name, pick);
         this.hideTitle();
       }
     };

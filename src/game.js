@@ -122,6 +122,8 @@ export class Game {
     this.overworld = new Overworld(this.rng.int(1, 1e9));
     this.site = this.overworld.colony;
     this.biome = opts.biome || this.site.biome;
+    // A biome picked at the new-colony screen: the camp's own tile on the region map is that biome too.
+    if (opts.biome) this.site.biome = opts.biome;
     // The camp map is shaped by its region biome: open grassland, dense forest, dunes, cliffs...
     this.world = new World(this.rng.int(1, 1e9), opts.width || 72, opts.height || 50, { biome: this.biome });
     initSoil(this.world, this.biome);

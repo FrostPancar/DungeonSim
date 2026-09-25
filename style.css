@@ -1215,6 +1215,21 @@ button,.card,.pick,.gz,.mt,.cb,.al{-webkit-tap-highlight-color:transparent}
 .ts-form label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--dim)}
 .ts-form input{font:inherit;font-size:14px;color:var(--ink);background:var(--s1);border:1px solid var(--rule);border-radius:var(--r1);padding:8px 10px}
 .ts-form input:focus{outline:none;border-color:var(--hi-line)}
+.nc-form{width:min(760px,100%)}
+.nc-h{font-size:12px;color:var(--dim)}
+.nc-biomes{display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:8px;max-height:min(52vh,560px);overflow:auto;padding:2px}
+.nc-biome{display:flex;flex-direction:column;align-items:stretch;gap:4px;padding:6px;text-align:left;font:inherit;color:var(--ink);cursor:var(--cur-hand);
+  background:var(--s1);border:1px solid var(--rule);border-radius:var(--r2)}
+.nc-biome:hover{border-color:var(--rule2)}
+.nc-biome.on{border-color:var(--hi-line);background:var(--hi-bg);box-shadow:0 0 0 1px var(--hi-line) inset}
+.nc-biome b{font-size:13px}
+.nc-pic{display:block;aspect-ratio:8/5;border-radius:var(--r1);overflow:hidden;background:var(--s3)}
+.nc-pic img{display:block;width:100%;height:100%;image-rendering:pixelated}
+.nc-dice{display:flex;align-items:center;justify-content:center;height:100%;font-size:26px}
+.nc-notes{display:flex;flex-wrap:wrap;gap:3px}
+.nc-notes i{font-style:normal;font-size:10.5px;line-height:1.3;padding:0 4px;border-radius:3px;background:var(--s2);color:var(--dim)}
+.nc-notes i.good{color:var(--good)}
+.nc-notes i.bad{color:var(--bad)}
 
 #options,#gamemenu{position:absolute;inset:0;z-index:95;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.55)}
 .op-card{width:min(460px,100%);max-height:calc(100vh - 32px);overflow:auto;background:var(--win);border:1px solid var(--rule);border-radius:var(--r3);box-shadow:var(--shadow)}

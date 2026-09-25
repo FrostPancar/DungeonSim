@@ -1226,6 +1226,21 @@ button,.card,.pick,.gz,.mt,.cb,.al{-webkit-tap-highlight-color:transparent}
 .ts-form label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--dim)}
 .ts-form input{font:inherit;font-size:14px;color:var(--ink);background:var(--s1);border:1px solid var(--rule);border-radius:var(--r1);padding:8px 10px}
 .ts-form input:focus{outline:none;border-color:var(--hi-line)}
+.nc-form{width:min(760px,100%)}
+.nc-h{font-size:12px;color:var(--dim)}
+.nc-biomes{display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:8px;max-height:min(52vh,560px);overflow:auto;padding:2px}
+.nc-biome{display:flex;flex-direction:column;align-items:stretch;gap:4px;padding:6px;text-align:left;font:inherit;color:var(--ink);cursor:var(--cur-hand);
+  background:var(--s1);border:1px solid var(--rule);border-radius:var(--r2)}
+.nc-biome:hover{border-color:var(--rule2)}
+.nc-biome.on{border-color:var(--hi-line);background:var(--hi-bg);box-shadow:0 0 0 1px var(--hi-line) inset}
+.nc-biome b{font-size:13px}
+.nc-pic{display:block;aspect-ratio:8/5;border-radius:var(--r1);overflow:hidden;background:var(--s3)}
+.nc-pic img{display:block;width:100%;height:100%;image-rendering:pixelated}
+.nc-dice{display:flex;align-items:center;justify-content:center;height:100%;font-size:26px}
+.nc-notes{display:flex;flex-wrap:wrap;gap:3px}
+.nc-notes i{font-style:normal;font-size:10.5px;line-height:1.3;padding:0 4px;border-radius:3px;background:var(--s2);color:var(--dim)}
+.nc-notes i.good{color:var(--good)}
+.nc-notes i.bad{color:var(--bad)}
 
 #options,#gamemenu{position:absolute;inset:0;z-index:95;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.55)}
 .op-card{width:min(460px,100%);max-height:calc(100vh - 32px);overflow:auto;background:var(--win);border:1px solid var(--rule);border-radius:var(--r3);box-shadow:var(--shadow)}
@@ -14933,6 +14948,8 @@ class Game {
     this.overworld = new Overworld(this.rng.int(1, 1e9));
     this.site = this.overworld.colony;
     this.biome = opts.biome || this.site.biome;
+    // A biome picked at the new-colony screen: the camp's own tile on the region map is that biome too.
+    if (opts.biome) this.site.biome = opts.biome;
     // The camp map is shaped by its region biome: open grassland, dense forest, dunes, cliffs...
     this.world = new World(this.rng.int(1, 1e9), opts.width || 72, opts.height || 50, { biome: this.biome });
     initSoil(this.world, this.biome);
@@ -16631,7 +16648,7 @@ function saveSummary(game, extra = {}) {
 // ============================================================================
 const COOP_PROTOCOL = 1;
 // The bundle stamps a hash of src/ in here (build.mjs), so two different builds refuse each other.
-const COOP_BUILD = 'be8d0e3cd3';
+const COOP_BUILD = '3e1d459e12';
 const COOP_MAX_PLAYERS = 4;
 const COOP_SIG_EVERY = 60;      // one in-game hour: a cheap signature
 const COOP_HASH_EVERY = 720;    // half a day: a hash of the whole game
@@ -20425,6 +20442,54 @@ class Renderer {
  * are shown as a short run, doors between two walls. Returns a data URL, or
  * null for things with no tile art (fields draw their crop instead).
  */
+/**
+ * A small picture of what a camp in `biome` looks like, for the new-colony
+ * screen: a little map of that biome painted tile by tile in its own
+ * materials (ground, rock, water, trees), with the Rift and the camp marked.
+ * Returns a data URL, or null where there's no canvas.
+ */
+const BIOME_THUMBS = new Map();
+function biomeThumb(biome, tw = 48, th = 30, k = 3) {
+  const key = biome + ':' + tw + 'x' + th + ':' + k;
+  if (BIOME_THUMBS.has(key)) return BIOME_THUMBS.get(key);
+  let url = null;
+  try {
+    const cv = document.createElement('canvas');
+    cv.width = tw * k; cv.height = th * k;
+    const g = cv.getContext('2d');
+    if (g && cv.toDataURL) {
+      const w = new World(7, tw, th, { biome });
+      const sk = skinFor(w);
+      const col = (t, i) => t === 0 ? (i % 3 ? sk.rock.top : sk.rock.top2) : t === 1 ? sk.dirt.base : t === 2 ? sk.moss[i % sk.moss.length]
+        : t === 3 ? sk.sand.base : t === 4 ? sk.water.deep : t === 5 ? '#16161c' : '#3a1850';
+      for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) {
+        const i = y * tw + x, t = w.terrain[i];
+        g.fillStyle = col(t, (x * 7 + y * 13) % 5);
+        g.fillRect(x * k, y * k, k, k);
+        // A lip under rock, so cliffs read as raised.
+        if (t === 0 && y + 1 < th && w.terrain[i + tw] !== 0) { g.fillStyle = sk.rock.face; g.fillRect(x * k, y * k + k - 1, k, 1); }
+        const f = w.feature[i];
+        if (!f) continue;
+        if (f === 'tree') {
+          const pal = sk.trees[(x + y) % sk.trees.length];
+          g.fillStyle = pal[1]; g.fillRect(x * k, y * k, k, k);
+          g.fillStyle = pal[3]; g.fillRect(x * k + 1, y * k, Math.max(1, k - 2), Math.max(1, k >> 1));
+        } else {
+          g.fillStyle = FEATURES[f] && FEATURES[f].inRock ? sk.rock.lip : 'rgba(230,220,170,0.55)';
+          g.fillRect(x * k + (k >> 1) - 1, y * k + (k >> 1) - 1, 2, 2);
+        }
+      }
+      // The camp: a warm point where the tents go.
+      const s = w.start;
+      g.fillStyle = 'rgba(255,190,90,0.35)'; g.beginPath(); g.arc((s.x + 0.5) * k, (s.y + 0.5) * k, k * 1.8, 0, TAU); g.fill();
+      g.fillStyle = '#ffcf7a'; g.fillRect(s.x * k + 1, s.y * k + 1, Math.max(2, k - 2), Math.max(2, k - 2));
+      url = cv.toDataURL();
+    }
+  } catch (e) { url = null; }
+  BIOME_THUMBS.set(key, url);
+  return url;
+}
+
 const THUMBS = new Map();
 function tileThumb(kind, id, px = 64) {
   const key = kind + ':' + id + ':' + px;
@@ -21524,9 +21589,9 @@ class UI {
     }
   }
 
-  newGame(seed) {
+  newGame(seed, biome = null) {
     this.seed = seed || Math.random().toString(36).slice(2, 9);
-    this.game = new Game(this.seed);
+    this.game = new Game(this.seed, biome ? { biome } : {});
     if (this.renderer) { this.renderer.game = this.game; this.renderer.cacheVersion = -1; this.renderer.selection = null; this.renderer.camX = this.game.world.start.x; this.renderer.camY = this.game.world.start.y; }
     this.lastLogLen = 0;
     this.sel = null;
@@ -25878,8 +25943,8 @@ class UI {
   }
 
   /** A new colony in slot n: generate, save straight away so the slot is claimed. */
-  startNewInSlot(n, seed, name) {
-    this.newGame(seed || undefined);
+  startNewInSlot(n, seed, name, biome = null) {
+    this.newGame(seed || undefined, biome);
     this.installGame(this.game);
     this.slot = n;
     this.colonyName = name || null;
@@ -25965,25 +26030,55 @@ class UI {
     this.renderTop();
   }
 
-  /** New colony: a name and, for the curious, a seed. */
+  /** The biomes a camp can be pitched in, with a few words on what each means for the colony. */
+  static startBiomes() {
+    return Object.keys(BIOMES).filter(id => id !== 'ocean').map(id => {
+      const B = BIOMES[id], C = CAMP_TERRAIN[id] || {};
+      const notes = [
+        B.fertility >= 0.7 ? ['🌱 Rich soil', 'good'] : B.fertility >= 0.4 ? ['🌱 Fair soil', ''] : ['🌱 Poor soil', 'bad'],
+        (C.trees || 0) >= 0.15 ? ['🪵 Thick woods', 'good'] : (C.trees || 0) >= 0.04 ? ['🪵 Some trees', ''] : ['🪵 Little wood', 'bad'],
+        B.danger >= 0.9 ? ['⚠️ Dangerous', 'bad'] : B.danger <= 0.3 ? ['🕊️ Calm', 'good'] : null,
+        C.rim ? ['⛰️ Walled in by cliffs', ''] : null,
+      ].filter(Boolean);
+      return { id, name: B.name, notes };
+    });
+  }
+
+  /** New colony: a name, where to pitch camp, and, for the curious, a seed. */
   showNewColony(n) {
     const box = $('#title');
+    let pick = null;              // null: the seed's own region decides
+    const card = (id, name, pic, notes) => `<button class="nc-biome${pick === id ? ' on' : ''}" data-biome="${id || ''}" aria-pressed="${pick === id}">
+        <span class="nc-pic">${pic}</span><b>${esc(name)}</b>
+        <span class="nc-notes">${notes.map(([t, k]) => `<i class="${k}">${t}</i>`).join('')}</span></button>`;
+    const biomes = UI.startBiomes();
     box.innerHTML = `<div class="ts-wrap">
         <div class="ts-logo small">New colony</div>
         <div class="ts-tag">Slot ${n}</div>
-        <div class="ts-form">
+        <div class="ts-form nc-form">
           <label>Name <input id="nc-name" maxlength="28" placeholder="The Camp at the Gate"></label>
+          <div class="nc-h">Where to pitch camp</div>
+          <div class="nc-biomes">
+            ${card(null, 'Random', '<span class="nc-dice">🎲</span>', [['The seed decides', '']])}
+            ${biomes.map(b => { const url = biomeThumb(b.id); return card(b.id, b.name, url ? `<img src="${url}" alt="">` : '', b.notes); }).join('')}
+          </div>
           <label>Seed <input id="nc-seed" maxlength="24" placeholder="random"></label>
-          <div class="mini">The same seed gives the same region, the same Rift and the same first colonists.</div>
+          <div class="mini">The same seed gives the same region, the same Rift and the same first colonists. Pick a biome and the camp's own map is that biome whatever the seed.</div>
           <div class="ts-acts"><button class="act" data-act="back">Back</button><button class="act primary" data-act="go">Pitch camp</button></div>
         </div>
       </div>`;
     box.onclick = (e) => {
+      const bb = e.target.closest && e.target.closest('[data-biome]');
+      if (bb) {
+        pick = bb.dataset.biome || null;
+        for (const c of box.querySelectorAll('[data-biome]')) { const on = (c.dataset.biome || null) === pick; c.classList.toggle('on', on); c.setAttribute('aria-pressed', on); }
+        return;
+      }
       const b = e.target.closest && e.target.closest('button'); if (!b) return;
       if (b.dataset.act === 'back') { this.showTitle(); return; }
       if (b.dataset.act === 'go') {
         const name = ($('#nc-name').value || '').trim(), seed = ($('#nc-seed').value || '').trim();
-        this.startNewInSlot(n, seed, name);
+        this.startNewInSlot(n, seed, name, pick);
         this.hideTitle();
       }
     };

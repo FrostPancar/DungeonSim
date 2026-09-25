@@ -2416,6 +2416,17 @@ describe('Onboarding & legibility', () => {
   }
 });
 
+describe('Choosing the starting biome', () => {
+  const picks = UI.startBiomes();
+  ok(picks.length === Object.keys(BIOMES).length - 1 && !picks.some(b => b.id === 'ocean'), 'every land biome can be picked (not open ocean)');
+  ok(picks.every(b => b.notes.length >= 2), 'each comes with a few words on soil and wood');
+  const a = new Game('biome-pick', { biome: 'tundra' }), b = new Game('biome-pick');
+  ok(a.biome === 'tundra' && a.world.biome === 'tundra' && a.site.biome === 'tundra', 'a picked biome shapes the camp map and its tile on the region map');
+  ok(a.overworld.colony.x === b.overworld.colony.x && a.colonists.length === b.colonists.length, 'the rest of the seed’s start is unchanged');
+  const re = loadState(saveState(a)).game;
+  ok(re.biome === 'tundra', 'and it survives a save');
+});
+
 describe('Sleep orders, beasts that follow, pens and stat lines', () => {
   // Somewhere clear near camp, with room for a w×h block.
   const clearSpot = (g, w, h, from = 3) => {

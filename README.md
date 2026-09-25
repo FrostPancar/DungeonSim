@@ -27,7 +27,7 @@ server, no network, no install.
   Safari and *Share → Add to Home Screen* to run it fullscreen like an app.
 
 It opens on a title screen with **three save slots**. Pick an empty one to
-found a colony (a name and, optionally, a seed), or **Continue** a saved one.
+found a colony (a name, the biome to pitch camp in — each shown as a small map with notes on soil, wood and danger, or Random to let the seed decide — and optionally a seed), or **Continue** a saved one.
 Runs **autosave at every dawn** and whenever you leave the tab; `Esc` (or ⚙️)
 opens the pause menu: save now, options, controls, save & quit. **When the
 colony falls** (everyone dead, or everyone down at once) **its save is

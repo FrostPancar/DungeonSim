@@ -18,7 +18,7 @@
 // are diamonds — shape carries identity at any zoom, emoji ride on top once the
 // tiles are big enough to hold them.
 // ============================================================================
-import { TERRAIN, FEATURES, T, anchorFor } from './world.js';
+import { World, TERRAIN, FEATURES, T, anchorFor } from './world.js';
 import { BUILDINGS, FLOORS, RACES } from './data.js';
 import { ANIMALS, penLayout } from './husbandry.js';
 import { BIOMES, SITE_KINDS } from './overworld.js';
@@ -3324,6 +3324,54 @@ export class Renderer {
  * are shown as a short run, doors between two walls. Returns a data URL, or
  * null for things with no tile art (fields draw their crop instead).
  */
+/**
+ * A small picture of what a camp in `biome` looks like, for the new-colony
+ * screen: a little map of that biome painted tile by tile in its own
+ * materials (ground, rock, water, trees), with the Rift and the camp marked.
+ * Returns a data URL, or null where there's no canvas.
+ */
+const BIOME_THUMBS = new Map();
+export function biomeThumb(biome, tw = 48, th = 30, k = 3) {
+  const key = biome + ':' + tw + 'x' + th + ':' + k;
+  if (BIOME_THUMBS.has(key)) return BIOME_THUMBS.get(key);
+  let url = null;
+  try {
+    const cv = document.createElement('canvas');
+    cv.width = tw * k; cv.height = th * k;
+    const g = cv.getContext('2d');
+    if (g && cv.toDataURL) {
+      const w = new World(7, tw, th, { biome });
+      const sk = skinFor(w);
+      const col = (t, i) => t === 0 ? (i % 3 ? sk.rock.top : sk.rock.top2) : t === 1 ? sk.dirt.base : t === 2 ? sk.moss[i % sk.moss.length]
+        : t === 3 ? sk.sand.base : t === 4 ? sk.water.deep : t === 5 ? '#16161c' : '#3a1850';
+      for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) {
+        const i = y * tw + x, t = w.terrain[i];
+        g.fillStyle = col(t, (x * 7 + y * 13) % 5);
+        g.fillRect(x * k, y * k, k, k);
+        // A lip under rock, so cliffs read as raised.
+        if (t === 0 && y + 1 < th && w.terrain[i + tw] !== 0) { g.fillStyle = sk.rock.face; g.fillRect(x * k, y * k + k - 1, k, 1); }
+        const f = w.feature[i];
+        if (!f) continue;
+        if (f === 'tree') {
+          const pal = sk.trees[(x + y) % sk.trees.length];
+          g.fillStyle = pal[1]; g.fillRect(x * k, y * k, k, k);
+          g.fillStyle = pal[3]; g.fillRect(x * k + 1, y * k, Math.max(1, k - 2), Math.max(1, k >> 1));
+        } else {
+          g.fillStyle = FEATURES[f] && FEATURES[f].inRock ? sk.rock.lip : 'rgba(230,220,170,0.55)';
+          g.fillRect(x * k + (k >> 1) - 1, y * k + (k >> 1) - 1, 2, 2);
+        }
+      }
+      // The camp: a warm point where the tents go.
+      const s = w.start;
+      g.fillStyle = 'rgba(255,190,90,0.35)'; g.beginPath(); g.arc((s.x + 0.5) * k, (s.y + 0.5) * k, k * 1.8, 0, TAU); g.fill();
+      g.fillStyle = '#ffcf7a'; g.fillRect(s.x * k + 1, s.y * k + 1, Math.max(2, k - 2), Math.max(2, k - 2));
+      url = cv.toDataURL();
+    }
+  } catch (e) { url = null; }
+  BIOME_THUMBS.set(key, url);
+  return url;
+}
+
 const THUMBS = new Map();
 export function tileThumb(kind, id, px = 64) {
   const key = kind + ':' + id + ':' + px;
