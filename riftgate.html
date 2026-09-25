@@ -1245,6 +1245,29 @@ button,.card,.pick,.gz,.mt,.cb,.al{-webkit-tap-highlight-color:transparent}
 .gm-h{font-family:Georgia,"Iowan Old Style",Palatino,serif;font-size:22px;letter-spacing:.1em;color:#f3e6c4;text-align:center;margin-bottom:4px}
 .gm-card .act{justify-content:center}
 
+/* --- co-op: Join World on the title, the code in the menu, the chip in play --- */
+.ts-join{position:absolute;top:16px;right:16px;z-index:1;display:flex;flex-direction:column;gap:5px;width:220px;padding:10px 12px;text-align:left;
+  background:var(--win);border:1px solid var(--rule);border-radius:var(--r3);box-shadow:var(--shadow)}
+.ts-join label{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim)}
+.ts-join-row{display:flex;gap:6px}
+.ts-join input{flex:1;min-width:0;font:700 18px ui-monospace,Menlo,monospace;letter-spacing:.35em;text-align:center;color:var(--ink);
+  background:var(--s1);border:1px solid var(--rule);border-radius:var(--r1);padding:6px 8px}
+.ts-join input:focus{outline:none;border-color:var(--hi-line)}
+.ts-join-msg{min-height:0;color:var(--dim)}
+.ts-join-msg:empty{display:none}
+.ts-join-msg.warn{color:var(--warn)}
+.ts-join-msg.good{color:var(--good)}
+@media (max-width:760px){#title{flex-direction:column}.ts-join{position:static;width:100%;margin:0 0 12px}}
+.gm-coop{display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px;border:1px dashed var(--hi-line);border-radius:var(--r2);background:var(--s1);text-align:center}
+.gm-code{font:700 34px ui-monospace,Menlo,monospace;letter-spacing:.3em;color:#f3e6c4;user-select:all}
+#coopbadge{position:absolute;top:6px;left:50%;transform:translateX(-50%);z-index:22;padding:4px 10px;font-size:12px;color:var(--ink);white-space:nowrap;
+  background:rgba(12,14,17,.9);border:1px solid var(--hi-line);border-radius:999px;cursor:var(--cur-hand)}
+#coopbadge.hidden{display:none}
+#coopbadge b{font-family:ui-monospace,Menlo,monospace;letter-spacing:.15em;color:#f3e6c4}
+#coopbadge em{font-style:normal;color:var(--dim)}
+#coopbadge em.good{color:var(--good)}
+#coopbadge em.warn{color:var(--warn)}
+
 /* --- the fight log: blow by blow, under the resource panel --- */
 #fightlog{position:absolute;left:6px;top:calc(var(--res-h, 350px) + 12px);z-index:18;width:min(300px,calc(100vw - 12px));
   padding:7px 9px;background:rgba(12,14,17,.82);border:1px solid rgba(255,255,255,.07);border-left:3px solid var(--danger);
@@ -1461,6 +1484,7 @@ details.fold>summary:hover{color:var(--ink)}
   <div id="modal" class="hidden"></div>
   <div id="help" class="hidden"></div>
   <div id="gameover" class="hidden"></div>
+  <div id="coopbadge" class="hidden" title="Co-op — click for the code and players"></div>
   <div id="gamemenu" class="hidden"></div>
   <div id="options" class="hidden"></div>
   <div id="title" class="hidden"></div>
@@ -16163,7 +16187,7 @@ function autoSpend(game) {
 const SAVE_VERSION = 1;
 const SAVE_CLASSES = { Game, World, Overworld, RNG };
 // Derived or transient: rebuilt after loading rather than stored.
-const SKIP_KEYS = new Set(['view', 'occ', 'fxAct', 'fxSt', 'fxCharging', '_bc', '_bcAll', '_open', 'spatial', 'aoeFocus']);
+const SKIP_KEYS = new Set(['view', 'occ', '_bcBuilt', 'fxAct', 'fxSt', 'fxCharging', '_bc', '_bcAll', '_open', 'spatial', 'aoeFocus']);
 const TYPED = { Uint8Array, Int32Array, Float32Array, Uint16Array, Int16Array, Float64Array, Uint32Array, Int8Array };
 
 function classOf(o) {
@@ -16293,6 +16317,495 @@ function saveSummary(game, extra = {}) {
     savedAt: Date.now(),
     ...extra,
   };
+}
+
+
+/* ===== src/coop.js ===== */
+// ============================================================================
+// CO-OP: several players, one colony, kept in step by deterministic lockstep.
+//
+// Every client runs the whole simulation. What travels is the host's clock
+// ("you may run to tick T") and the players' commands, each stamped with the
+// tick it runs on. Same seed + same commands on the same ticks = same colony.
+//
+// Nothing here touches the DOM or the network: the host and guest classes talk
+// through a `send` function, so the harness can wire two of them together in
+// one process, with delays and reordering, and prove they never drift.
+//
+// The fail-safe (docs/coop-plan.md §7): the host stamps a cheap signature every
+// SIG_EVERY ticks and a full-state hash every HASH_EVERY ticks. A guest checks
+// its own numbers at the same tick, before that tick's commands run. On any
+// mismatch it stops and asks for the host's save, reloads it and carries on
+// from the host's numbers. Seed, build and protocol are checked when joining.
+// ============================================================================
+const COOP_PROTOCOL = 1;
+// The bundle stamps a hash of src/ in here (build.mjs), so two different builds refuse each other.
+const COOP_BUILD = '9c6a8125f4';
+const COOP_MAX_PLAYERS = 4;
+const COOP_SIG_EVERY = 60;      // one in-game hour: a cheap signature
+const COOP_HASH_EVERY = 720;    // half a day: a hash of the whole game
+const COOP_FAR_BEHIND = 2880;          // two days behind: fetch a snapshot rather than replay
+
+/**
+ * The game methods a player may call, and what the issuing guest is told the
+ * call returned while it is still on its way to the host. Everything is plain
+ * data: ids, coordinates and strings, never object references.
+ */
+const COOP_OPS = {
+  build: true, designate: true, rush: true,
+  orderMove: true, orderWork: true, orderTravel: true, orderAttack: true,
+  orderTame: true, orderRescue: true, orderHunt: true, markButcher: true,
+  setPriority: true, setHandler: true, setCrop: true, cancelTraining: true,
+  setResearch: true, unqueueResearch: true, queueResearch: true, researchPart: null,
+  launchExpedition: { ok: true, ids: [] }, choosePrestige: null,
+  equip: null, unequip: true, upgradeGear: true, forge: null, craftLegendary: null, brew: null,
+  enroll: null, readTome: null, learnBook: null, copyBook: null, designSpell: null, buildFloor: true,
+  buy: true, sell: true, buyLivestock: true, buyMagic: null, sellBook: null,
+  acceptArrival: true, rejectArrival: true,
+};
+
+// ------------------------------------------------------------- numbers --
+/** 32-bit FNV-1a over a string: the same function the seeded RNG hashes with. */
+function coopFnv(str, h = 2166136261) {
+  h >>>= 0;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+
+/** The module-level id counters. They are part of the state: a colony that hands out a different next id has drifted. */
+function coopCounters() {
+  return [npcIdCounter(), beastIdCounter(), monsterIdCounter(), itemIdCounter()];
+}
+function coopSetCounters(c) {
+  resetIds(c[0]); resetBeastIds(c[1]); resetMonsterIds(c[2]); resetItemIds(c[3]);
+}
+
+/**
+ * Cheap, every hour: the clock, the RNG, the id counters, where everyone is
+ * and how hurt, what's in the stores, and how long the log is. Most drift
+ * shows up here within the hour it starts.
+ */
+function coopQuickSig(g) {
+  const parts = [g.tick_, g.rng.s, coopCounters().join('.'), g.maps.length, g.logs.length];
+  for (const c of g.colonists) parts.push(c.id, c.x, c.y, Math.round((c.hp || 0) * 100), c.mapId || 0, c.dead ? 1 : 0);
+  for (const m of g.maps) { parts.push('m' + m.id); for (const r of m.raiders || []) parts.push(r.id, r.x, r.y, Math.round((r.hp || 0) * 100)); }
+  for (const k of Object.keys(g.resources)) parts.push(k, Math.round(g.resources[k] * 100));
+  return coopFnv(parts.join(','));
+}
+
+/**
+ * Thorough, twice a day: a hash of the whole save. The tutorial is left out —
+ * it lives on the game but follows each player's own clicks.
+ */
+function coopFullHash(g) {
+  const tut = g.tutorial;
+  if (tut !== undefined) g.tutorial = undefined;
+  try { return coopFnv(coopCounters().join('.') + '|' + encodeGame(g)); }
+  finally { if (tut !== undefined) g.tutorial = tut; }
+}
+
+// ------------------------------------------------------------ commands --
+/** Run one player command on a game. Returns what the method returned, or an error string. */
+function applyCoopCommand(game, cmd) {
+  if (!Object.prototype.hasOwnProperty.call(COOP_OPS, cmd.op)) return 'Unknown order: ' + cmd.op;
+  const m = game.mapById(cmd.mapId || 0);
+  if (!m) return 'That map is gone.';
+  const v = game.viewOf(m);
+  if (typeof v[cmd.op] !== 'function') return 'Unknown order: ' + cmd.op;
+  try { return v[cmd.op](...(cmd.args || [])); }
+  catch (e) { return 'That order failed: ' + (e && e.message ? e.message : e); }
+}
+
+/** Turn a method's return value into a message for the player who asked — or null when it worked. */
+function coopResultMessage(op, r) {
+  if (typeof r === 'string') return r || null;
+  if (r && typeof r === 'object' && r.ok === false) return r.why || r.msg || r.reason || 'That could not be done.';
+  if (r === false && ['build', 'orderWork', 'buy', 'sell', 'buyLivestock', 'acceptArrival'].includes(op)) return 'That could not be done.';
+  return null;
+}
+
+/** Four digits. A code is only a meeting point, not a secret. */
+function coopNewCode(rand = Math.random) {
+  return String(Math.floor(rand() * 10000)).padStart(4, '0');
+}
+
+// --------------------------------------------------------------- host --
+/**
+ * The host owns the clock and the order of commands. `send(peer, msg)` goes to
+ * one guest, peer null means everyone. The host's game is the canonical one.
+ */
+class CoopHost {
+  constructor(game, { code, send, name = 'Host', onEvent = () => {} }) {
+    this.game = game;
+    this.code = code;
+    this.send = send;
+    this.onEvent = onEvent;
+    this.players = [{ id: 0, peer: null, name }];
+    this.nextPlayer = 1;
+    this.seq = 0;
+    this.out = [];              // commands run since the last turn went out
+    this.sigs = [];             // [tick, quickSig, fullHash|null] since the last turn
+    this.lastTurnTick = -1;
+    this.speed = 1; this.paused = false;
+  }
+
+  get guests() { return this.players.filter(p => p.peer != null); }
+
+  /** Run a command now, at the current tick, and queue it for everyone else. */
+  issue(player, op, mapId, args) {
+    const g = this.game;
+    const cmd = { at: g.tick_, seq: ++this.seq, player, op, mapId: mapId || 0, args: args || [] };
+    const r = applyCoopCommand(g, cmd);
+    this.out.push(cmd);
+    return r;
+  }
+
+  /** Call after every game.step(), before anything else runs at the new tick. */
+  afterStep() {
+    const t = this.game.tick_;
+    if (t % COOP_SIG_EVERY === 0) this.sigs.push([t, coopQuickSig(this.game), t % COOP_HASH_EVERY === 0 ? coopFullHash(this.game) : null]);
+  }
+
+  /** Send what happened since the last turn. Cheap to call every frame. */
+  flush(force = false) {
+    const t = this.game.tick_;
+    if (!force && t === this.lastTurnTick && !this.out.length && !this.sigs.length && !this.clockDirty) return;
+    if (!this.guests.length) { this.out.length = 0; this.sigs.length = 0; this.lastTurnTick = t; this.clockDirty = false; return; }
+    this.send(null, { t: 'turn', upTo: t, speed: this.speed, paused: this.paused, cmds: this.out, sigs: this.sigs, players: this.roster() });
+    this.out = []; this.sigs = []; this.lastTurnTick = t; this.clockDirty = false;
+  }
+
+  setClock(speed, paused) {
+    if (speed !== this.speed || paused !== this.paused) this.clockDirty = true;
+    this.speed = speed; this.paused = paused;
+  }
+
+  roster() { return this.players.map(p => ({ id: p.id, name: p.name })); }
+
+  /** Everything a guest needs to become this colony: the save, and where the command stream picks up. */
+  snapshot(player) {
+    // Anything already run is inside the save, so the guest skips seq ≤ this.
+    this.flush(true);
+    return {
+      t: 'snapshot', player, code: this.code, seed: this.game.seedString, tick: this.game.tick_,
+      seq: this.seq, speed: this.speed, paused: this.paused, save: saveState(this.game, {}), players: this.roster(),
+    };
+  }
+
+  receive(peer, msg) {
+    if (!msg || typeof msg !== 'object') return;
+    const p = this.players.find(x => x.peer === peer);
+    if (msg.t === 'hello') {
+      const why = msg.proto !== COOP_PROTOCOL ? 'The host is on a different version of co-op. Reload the page.'
+        : msg.build !== COOP_BUILD ? 'The host is running a different build of the game. Reload the page (both of you).'
+        : this.players.length >= COOP_MAX_PLAYERS && !p ? `This world is full (${COOP_MAX_PLAYERS} players).`
+        : this.game.gameOver ? 'That colony has fallen.' : null;
+      if (why) { this.send(peer, { t: 'refuse', why }); return; }
+      const me = p || { id: this.nextPlayer++, peer, name: String(msg.name || '').slice(0, 20) || 'Player' };
+      // Snapshot first: its flush goes to the guests already in, not to this one.
+      const snap = this.snapshot(me.id);
+      if (!p) { this.players.push(me); snap.players = this.roster(); }
+      this.send(peer, snap);
+      this.onEvent({ kind: 'join', player: me });
+      this.clockDirty = true;
+    } else if (!p) {
+      return;
+    } else if (msg.t === 'cmd') {
+      if (!Object.prototype.hasOwnProperty.call(COOP_OPS, msg.op) || !Array.isArray(msg.args)) return;
+      const r = this.issue(p.id, msg.op, msg.mapId, msg.args);
+      const why = coopResultMessage(msg.op, r);
+      if (why) this.send(peer, { t: 'result', seq: msg.seq, msg: why });
+    } else if (msg.t === 'resync') {
+      // The fail-safe: whatever the guest thinks, the host's numbers win.
+      this.onEvent({ kind: 'resync', player: p, reason: msg.reason, tick: msg.tick });
+      this.send(peer, this.snapshot(p.id));
+    } else if (msg.t === 'ask') {
+      this.onEvent({ kind: 'ask', player: p, what: msg.what });
+    }
+  }
+
+  drop(peer) {
+    const i = this.players.findIndex(x => x.peer === peer);
+    if (i < 0) return;
+    const [p] = this.players.splice(i, 1);
+    this.onEvent({ kind: 'leave', player: p });
+    this.clockDirty = true;
+  }
+}
+
+// -------------------------------------------------------------- guest --
+/**
+ * A guest never runs ahead of the host: it steps up to the last tick the host
+ * announced, running each command on its tick, and checks the host's numbers
+ * as it passes them. `load(saveText)` must return the loaded Game.
+ */
+class CoopGuest {
+  constructor({ send, load, onEvent = () => {} }) {
+    this.send = send;
+    this.load = load;
+    this.onEvent = onEvent;
+    this.game = null;
+    this.player = null;
+    this.upTo = -1;
+    this.queue = [];            // commands not yet run, in (at, seq) order
+    this.hostSigs = new Map();  // tick -> [quick, full|null]
+    this.minSeq = 0;            // commands up to here are already in the snapshot
+    this.mySeq = 0;
+    this.waiting = true;        // no game yet, or a resync in flight
+    this.speed = 1; this.paused = false;
+    this.players = [];
+    this.checks = { quick: 0, full: 0, resyncs: 0 };
+  }
+
+  hello(name) { this.send({ t: 'hello', proto: COOP_PROTOCOL, build: COOP_BUILD, name }); }
+
+  /** Ask the host to run something. The answer arrives as a turn; a failure also as a message. */
+  issue(op, mapId, args) {
+    if (this.waiting) return false;
+    this.send({ t: 'cmd', seq: ++this.mySeq, op, mapId: mapId || 0, args: args || [] });
+    return true;
+  }
+
+  receive(msg) {
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.t === 'snapshot') {
+      const g = this.load(msg.save);
+      if (g.seedString !== msg.seed || g.tick_ !== msg.tick) { this.resync('the host save did not load to the host tick'); return; }
+      this.game = g;
+      this.player = msg.player;
+      this.upTo = msg.tick;
+      this.minSeq = msg.seq;
+      this.queue = this.queue.filter(c => c.seq > msg.seq);
+      this.hostSigs.clear();
+      this.speed = msg.speed; this.paused = msg.paused; this.players = msg.players || [];
+      this.waiting = false;
+      this.onEvent({ kind: 'loaded', game: g });
+    } else if (msg.t === 'turn') {
+      for (const c of msg.cmds) if (c.seq > this.minSeq) this.queue.push(c);
+      this.queue.sort((a, b) => a.at - b.at || a.seq - b.seq);
+      for (const [t, q, f] of msg.sigs) this.hostSigs.set(t, [q, f]);
+      this.upTo = Math.max(this.upTo, msg.upTo);
+      this.speed = msg.speed; this.paused = msg.paused;
+      if (msg.players) this.players = msg.players;
+    } else if (msg.t === 'result') {
+      this.onEvent({ kind: 'result', msg: msg.msg });
+    } else if (msg.t === 'refuse') {
+      this.onEvent({ kind: 'refused', why: msg.why });
+    }
+  }
+
+  get behind() { return this.game ? this.upTo - this.game.tick_ : 0; }
+
+  /** Commands that run at the current tick, before the next step. */
+  runDue() {
+    const g = this.game;
+    while (this.queue.length && this.queue[0].at <= g.tick_) {
+      const c = this.queue.shift();
+      if (c.at < g.tick_) { this.resync(`an order for tick ${c.at} arrived after tick ${g.tick_}`); return false; }
+      applyCoopCommand(g, c);
+    }
+    return true;
+  }
+
+  /**
+   * Catch up towards the host: at most `maxSteps` ticks. `beforeStep` lets the
+   * caller keep per-tick UI work in line (it is not allowed to touch the game).
+   * Returns how many ticks ran.
+   */
+  advance(maxSteps = Infinity, stepFn = (g) => g.step()) {
+    if (this.waiting || !this.game) return 0;
+    const g = this.game;
+    if (this.behind > COOP_FAR_BEHIND) { this.resync('fell more than two days behind'); return 0; }
+    if (!this.runDue()) return 0;
+    let n = 0;
+    while (g.tick_ < this.upTo && n < maxSteps && !this.waiting) {
+      stepFn(g); n++;
+      if (!this.check()) break;
+      if (!this.runDue()) break;
+    }
+    return n;
+  }
+
+  /** Compare with the host's numbers for this tick, if it sent any. */
+  check() {
+    const g = this.game, t = g.tick_;
+    const hs = this.hostSigs.get(t);
+    if (!hs) return true;
+    this.hostSigs.delete(t);
+    const q = coopQuickSig(g);
+    this.checks.quick++;
+    if (q !== hs[0]) { this.resync(`signature mismatch at tick ${t}`); return false; }
+    if (hs[1] != null) {
+      this.checks.full++;
+      if (coopFullHash(g) !== hs[1]) { this.resync(`full hash mismatch at tick ${t}`); return false; }
+    }
+    return true;
+  }
+
+  resync(reason) {
+    if (this.waiting && this.game) return;
+    this.waiting = true;
+    this.checks.resyncs++;
+    this.onEvent({ kind: 'desync', reason, tick: this.game ? this.game.tick_ : -1 });
+    this.send({ t: 'resync', reason, tick: this.game ? this.game.tick_ : -1 });
+  }
+}
+
+/** Load a host save text and hand back the Game (the id counters come with it). */
+function coopLoad(text) { return loadState(text).game; }
+
+
+/* ===== src/net.js ===== */
+// ============================================================================
+// NET: the wire under co-op. Browser only; the simulation never imports it.
+//
+// The site is static (Netlify), so there is no server of ours to meet at.
+// Players meet through PeerJS's public signalling server and then talk
+// browser-to-browser over a WebRTC data channel. The host's peer id is built
+// from the 4-digit room code, so "join 4821" is all a friend needs.
+//
+// Messages are JSON. A data channel drops anything much over 64 KB, and a
+// colony's save is far bigger, so long messages are gzipped and go out in
+// numbered pieces, put back together on arrival (the channel is ordered and
+// reliable).
+// ============================================================================
+
+const NET_PEERJS_URL = 'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js';
+const NET_ID_PREFIX = 'riftgate-coop-v1-';
+const NET_CHUNK = 16000;
+
+let netPeerLib = null;
+/** Fetch PeerJS once, the first time someone opens or joins a world. */
+function netLoadPeer() {
+  if (typeof window !== 'undefined' && window.Peer) return Promise.resolve(window.Peer);
+  if (netPeerLib) return netPeerLib;
+  netPeerLib = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = NET_PEERJS_URL;
+    s.async = true;
+    s.onload = () => window.Peer ? resolve(window.Peer) : reject(new Error('PeerJS did not load'));
+    s.onerror = () => { netPeerLib = null; reject(new Error('Could not reach the co-op service. Are you online?')); };
+    document.head.appendChild(s);
+  });
+  return netPeerLib;
+}
+
+/** gzip a string to base64, where the browser can; null where it can't. */
+async function netGzip(text) {
+  if (typeof CompressionStream === 'undefined') return null;
+  const buf = new Uint8Array(await new Response(new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+async function netGunzip(b64) {
+  const bin = atob(b64), buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  return await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
+}
+
+/**
+ * Wrap a PeerJS connection: JSON in and out, split and joined in pieces, and
+ * big messages (a colony's save) gzipped first. Compressing is async, so both
+ * ends run their messages through a queue to keep them in the order sent.
+ */
+function netWrap(conn, onMessage) {
+  const parts = new Map();
+  let nextId = 1, inbox = Promise.resolve(), outbox = Promise.resolve();
+  const deliver = (text, gz) => {
+    inbox = inbox.then(async () => {
+      try { onMessage(JSON.parse(gz ? await netGunzip(text) : text)); } catch (e) { /* a broken message is dropped */ }
+    });
+  };
+  conn.on('data', (raw) => {
+    if (typeof raw !== 'string') return;
+    if (raw.startsWith('{"$chunk"')) {
+      let m;
+      try { m = JSON.parse(raw); } catch (e) { return; }
+      let p = parts.get(m.$chunk);
+      if (!p) { p = { got: 0, s: [] }; parts.set(m.$chunk, p); }
+      if (p.s[m.i] === undefined) { p.s[m.i] = m.s; p.got++; }
+      if (p.got === m.n) { parts.delete(m.$chunk); deliver(p.s.join(''), !!m.gz); }
+      return;
+    }
+    deliver(raw, false);
+  });
+  const sendNow = async (msg) => {
+    let s = JSON.stringify(msg), gz = false;
+    if (s.length > NET_CHUNK * 4) { const z = await netGzip(s).catch(() => null); if (z) { s = z; gz = true; } }
+    if (!conn.open) return;
+    if (!gz && s.length <= NET_CHUNK) { conn.send(s); return; }
+    const id = nextId++, n = Math.ceil(s.length / NET_CHUNK);
+    for (let i = 0; i < n; i++) conn.send(JSON.stringify({ $chunk: id, i, n, gz: gz ? 1 : 0, s: s.slice(i * NET_CHUNK, (i + 1) * NET_CHUNK) }));
+  };
+  return (msg) => { outbox = outbox.then(() => sendNow(msg)).catch(() => {}); };
+}
+
+/**
+ * Open a room. Tries codes until one is free. Resolves to
+ * { code, send(peer, msg), close() }; peer null sends to everyone.
+ */
+async function netHost({ makeCode, onMessage, onJoin, onLeave, onError }) {
+  const Peer = await netLoadPeer();
+  const conns = new Map();
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const code = makeCode();
+    const peer = new Peer(NET_ID_PREFIX + code, { debug: 0 });
+    const opened = await new Promise((resolve) => {
+      peer.on('open', () => resolve(true));
+      peer.on('error', (e) => resolve(e && e.type === 'unavailable-id' ? false : e));
+    });
+    if (opened === false) { peer.destroy(); continue; }       // that code is taken: roll again
+    if (opened !== true) { peer.destroy(); throw new Error(netErrorText(opened)); }
+    peer.on('error', (e) => onError && onError(netErrorText(e)));
+    peer.on('connection', (conn) => {
+      conn.on('open', () => {
+        const send = netWrap(conn, (m) => onMessage(conn.peer, m));
+        conns.set(conn.peer, { conn, send });
+        onJoin && onJoin(conn.peer);
+      });
+      const gone = () => { if (conns.delete(conn.peer)) onLeave && onLeave(conn.peer); };
+      conn.on('close', gone);
+      conn.on('error', gone);
+    });
+    // Lost the signalling server: players already in keep playing; new ones can't find us until it's back.
+    peer.on('disconnected', () => { if (!peer.destroyed) setTimeout(() => !peer.destroyed && peer.reconnect(), 2000); });
+    return {
+      code,
+      send(to, msg) {
+        if (to == null) { for (const c of conns.values()) c.send(msg); return; }
+        const c = conns.get(to); if (c) c.send(msg);
+      },
+      close() { for (const c of conns.values()) c.conn.close(); conns.clear(); peer.destroy(); },
+    };
+  }
+  throw new Error('Could not find a free room code. Try again.');
+}
+
+/** Join room `code`. Resolves to { send(msg), close() } once connected. */
+async function netJoin(code, { onMessage, onClose, onError }) {
+  const Peer = await netLoadPeer();
+  const peer = new Peer(undefined, { debug: 0 });
+  await new Promise((resolve, reject) => {
+    peer.on('open', resolve);
+    peer.on('error', (e) => reject(new Error(netErrorText(e))));
+  });
+  const conn = peer.connect(NET_ID_PREFIX + code, { reliable: true, serialization: 'raw' });
+  const send = await new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`No world is open with code ${code}.`)), 12000);
+    peer.on('error', (e) => { clearTimeout(t); reject(new Error(e && e.type === 'peer-unavailable' ? `No world is open with code ${code}.` : netErrorText(e))); });
+    conn.on('open', () => { clearTimeout(t); resolve(netWrap(conn, onMessage)); });
+  });
+  peer.on('error', (e) => onError && onError(netErrorText(e)));
+  conn.on('close', () => onClose && onClose());
+  return { send, close() { conn.close(); peer.destroy(); } };
+}
+
+function netErrorText(e) {
+  if (!e) return 'Connection failed.';
+  if (e.type === 'network' || e.type === 'server-error' || e.type === 'socket-error') return 'Could not reach the co-op service. Are you online?';
+  if (e.type === 'browser-incompatible') return 'This browser cannot do peer-to-peer connections.';
+  return e.message || String(e);
 }
 
 
@@ -20449,6 +20962,8 @@ const LINE_BUILDS = new Set(['wall', 'timber_wall', 'door', 'fence', 'palisade',
 
 
 
+
+
 // ------------------------------------------------------------ save slots --
 // Three slots in localStorage. A save is gzipped where the browser can
 // (CompressionStream), which takes a run from ~1 MB to ~100 KB; otherwise it
@@ -20859,7 +21374,7 @@ class UI {
         if (!this.spaceHeld) { this.spaceHeld = true; this.spaceMovedCam = false; }
         return;
       }
-      if (k >= '1' && k <= '4') { this.speed = +k; this.paused = false; this.renderTop(); }
+      if (k >= '1' && k <= '4') { if (this.guestTime('speed ' + k)) return; this.speed = +k; this.paused = false; this.renderTop(); }
       else if (k === 'escape') {
         if (!$('#modal').classList.contains('hidden')) { this.hide('#modal'); return; }
         if (!$('#help').classList.contains('hidden')) { this.hide('#help'); return; }
@@ -20904,11 +21419,12 @@ class UI {
       if (e.key.toLowerCase() !== ' ') return;
       this.spaceHeld = false;
       // A tap of space pauses; a space-drag was a pan and must not also pause.
-      if (!this.spaceMovedCam) { this.paused = !this.paused; this.renderTop(); }
+      if (!this.spaceMovedCam && !this.guestTime(this.paused ? 'resume' : 'pause')) { this.paused = !this.paused; this.renderTop(); }
     });
 
     $('#datebox .spd').addEventListener('click', (e) => {
       const b = e.target.closest('button'); if (!b) return;
+      if (this.guestTime(b.dataset.spd === 'p' ? (this.paused ? 'resume' : 'pause') : 'speed ' + b.dataset.spd)) return;
       if (b.dataset.spd === 'p') this.paused = !this.paused;
       else { this.speed = +b.dataset.spd; this.paused = false; }
       this.renderTop();
@@ -20934,9 +21450,15 @@ class UI {
       this.renderer.overlay = this.renderer.overlay === 'soil' ? 'water' : this.renderer.overlay === 'water' ? null : 'soil';
       this.renderTop();
     });
-    $('#autobtn').addEventListener('click', () => { this.auto = !this.auto; this.renderTop(); });
+    $('#autobtn').addEventListener('click', () => {
+      // The steward acts outside the command stream, so in co-op it would pull the players apart.
+      if (this.coop) { this.flash('The steward is off in co-op: its orders would only happen on one screen.', 'warn'); return; }
+      this.auto = !this.auto; this.renderTop();
+    });
     $('#helpbtn').addEventListener('click', () => this.toggleHelp());
     $('#menubtn').addEventListener('click', () => this.showGameMenu());
+    const cb = $('#coopbadge');
+    if (cb) cb.addEventListener('click', () => this.showGameMenu());
     // Leaving the tab (or closing it) saves, so a run is never lost to a refresh.
     if (typeof document !== 'undefined' && document.addEventListener) {
       document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') this.saveToSlot('auto'); });
@@ -21001,7 +21523,7 @@ class UI {
       if (gz.dataset.locked) {
         const tech = gz.dataset.tech, R = RESEARCH[tech];
         if (this.game.research.done.has(tech)) return;
-        this.game.queueResearch(tech);
+        this.act(this.game, 'queueResearch', tech);
         this.flash(`${BUILDINGS[gz.dataset.locked].name} needs ${R ? R.name : tech} — queued for research`, 'info');
         this.sigs.drawer = null; this.renderDrawer();
         return;
@@ -21215,11 +21737,11 @@ class UI {
     if (big) { x0 = x1; y0 = y1; }
     for (let y = Math.min(y0, y1); y <= Math.max(y0, y1); y++)
       for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++) {
-        if (t.mode === 'mine') n += g.designate(x, y, 'mine') ? 1 : 0;
-        else if (t.mode === 'harvest') n += g.designate(x, y, 'harvest') ? 1 : 0;
-        else if (t.mode === 'cancel') n += g.designate(x, y, 'cancel') ? 1 : 0;
-        else if (t.mode === 'build') n += g.build(x, y, t.id) ? 1 : 0;
-        else if (t.mode === 'floor') n += g.buildFloor(x, y, t.id) ? 1 : 0;
+        if (t.mode === 'mine') n += this.act(g, 'designate', x, y, 'mine') ? 1 : 0;
+        else if (t.mode === 'harvest') n += this.act(g, 'designate', x, y, 'harvest') ? 1 : 0;
+        else if (t.mode === 'cancel') n += this.act(g, 'designate', x, y, 'cancel') ? 1 : 0;
+        else if (t.mode === 'build') n += this.act(g, 'build', x, y, t.id) ? 1 : 0;
+        else if (t.mode === 'floor') n += this.act(g, 'buildFloor', x, y, t.id) ? 1 : 0;
       }
     this.renderer.cacheVersion = -1;
     // Say what happened. A drag that ordered nothing used to look identical to
@@ -21253,19 +21775,19 @@ class UI {
       add(way === 'up' ? '⬆️' : '🌀', where[0].toUpperCase() + where.slice(1), () => {
         if (way === 'down' && m.kind === 'camp' && !g.canEnterRift) { this.flash('The Rift is open and spewing — nobody goes in until dawn.', 'warn'); return; }
         if (way === 'down' && m.kind === 'floor' && m.depth >= g.floorCount) { this.flash('This is the bottom of the Rift today.', 'warn'); return; }
-        this.game.orderTravel(ids, way);
+        this.act(this.game, 'orderTravel', ids, way);
         this.flash(`${who} ${n === 1 ? 'heads' : 'head'} ${where}`, 'good');
       }, 'good');
     }
     // One of ours down on the ground: the nearest of the selection carries them out.
     const hurt = g.here.find(c => c.downed && !c.carriedBy && c.x === x && c.y === y);
     if (hurt) add('🩹', `Carry ${hurt.name.short} to safety`, () => {
-      const r = this.game.orderRescue(ids, hurt.id);
+      const r = this.act(this.game, 'orderRescue', ids, hurt.id);
       this.flash(r ? `${r.name.short} goes to carry ${hurt.name.short} to safety` : `Nobody selected can carry ${hurt.name.short}`, r ? 'good' : 'warn');
     }, 'good');
     // A friend standing there (not one of the selection): walk over and trade places.
     const friend = g.here.find(c => !c.downed && !c.dead && !ids.includes(c.id) && c.x === x && c.y === y);
-    if (friend && n === 1) add('🔄', `Swap places with ${friend.name.short}`, () => { g.orderMove(ids, x, y); this.flash(`${who} swaps places with ${friend.name.short}`, 'info'); });
+    if (friend && n === 1) add('🔄', `Swap places with ${friend.name.short}`, () => { this.act(g, 'orderMove', ids, x, y); this.flash(`${who} swaps places with ${friend.name.short}`, 'info'); });
     // Beasts: ours can be given a handler or slaughtered; wild ones tamed or hunted.
     const beast = g.beasts.find(b => !b.dead && b.x === x && b.y === y);
     if (beast && beast.tame) {
@@ -21273,27 +21795,27 @@ class UI {
       if (canFollow(beast)) {
         const same = beast.handler === lead.id;
         add('🦮', same ? `${beast.name} stops following ${lead.name.short}` : `${beast.name} follows ${lead.name.short}`, () => {
-          this.game.setHandler(beast.id, same ? null : lead.id);
+          this.act(this.game, 'setHandler', beast.id, same ? null : lead.id);
           this.flash(same ? `${beast.name} no longer follows ${lead.name.short}` : `${beast.name} now follows ${lead.name.short}`, 'good');
           this.sigs.insp = null;
         });
       }
-      add('🔪', beast.markedButcher ? `Spare ${beast.name}` : `Mark ${beast.name} for slaughter`, () => { this.game.markButcher(beast.id); this.sigs.insp = null; }, 'danger');
+      add('🔪', beast.markedButcher ? `Spare ${beast.name}` : `Mark ${beast.name} for slaughter`, () => { this.act(this.game, 'markButcher', beast.id); this.sigs.insp = null; }, 'danger');
     } else if (beast) {
       const A = ANIMALS[beast.species];
       add('🤝', `Tame the ${A.name}${A.wildAggressive ? ' (dangerous)' : ''}`, () => {
-        const c = this.game.orderTame(ids, beast.id);
+        const c = this.act(this.game, 'orderTame', ids, beast.id);
         this.flash(c ? `${c.name.short} tries to tame the ${A.name}` : 'Nobody free to do it', c ? 'good' : 'warn');
       }, 'good');
       add('⚔️', `Hunt the ${A.name}`, () => {
-        const k = this.game.orderHunt(ids, beast.id);
+        const k = this.act(this.game, 'orderHunt', ids, beast.id);
         this.flash(k ? `${who} ${n === 1 ? 'hunts' : 'hunt'} the ${A.name}` : 'Nobody free to do it', k ? 'warn' : 'info');
       }, 'danger');
     }
     // Someone else's people: talk to the neutral ones, fight anyone.
     const r = g.raiders.find(r => r.hp > 0 && r.x === x && r.y === y);
     if (r && r.neutral) add('💬', `Talk to ${r.name.short}`, () => { this.sel = { kind: 'enemy', id: r.id, ref: r }; this.sigs.insp = null; this.renderInspector(); }, 'good');
-    if (r) add('⚔️', `Attack ${r.name.short}${r.neutral ? ' (they are neutral)' : ''}`, () => { g.orderAttack(ids, r.id); this.flash(`${who} ${n === 1 ? 'attacks' : 'attack'} ${r.name.short}`, 'warn'); }, 'danger');
+    if (r) add('⚔️', `Attack ${r.name.short}${r.neutral ? ' (they are neutral)' : ''}`, () => { this.act(g, 'orderAttack', ids, r.id); this.flash(`${who} ${n === 1 ? 'attacks' : 'attack'} ${r.name.short}`, 'warn'); }, 'danger');
     // Something workable: everyone takes a side of it and works it at once.
     const job = g.siteJobAt(x, y);
     if (job) {
@@ -21302,7 +21824,7 @@ class UI {
         : job.kind === 'harvest' ? `${f === 'tree' ? 'Chop' : 'Harvest'} ${f && FEATURES[f] ? FEATURES[f].name.toLowerCase() : ''}`.trim()
           : { mine: 'Mine', build: 'Build', floor: 'Lay the floor' }[job.kind];
       add({ mine: '⛏️', harvest: f === 'tree' ? '🪓' : '🌿', build: '🔨', floor: '🧱' }[job.kind], `${label}${n > 1 ? ` together (×${n})` : ''}`, () => {
-        if (!g.orderWork(ids, x, y)) { this.flash('Nobody can get at it', 'warn'); return; }
+        if (!this.act(g, 'orderWork', ids, x, y)) { this.flash('Nobody can get at it', 'warn'); return; }
         this.renderer.cacheVersion = -1;
         this.flash(`${who}: ${label.toLowerCase()}`, 'good');
       }, 'good');
@@ -21313,8 +21835,8 @@ class UI {
       const c = g.colonists.find(k => k.id === ids[0]);
       if (bd.keeper !== c.id) add('🧑‍💼', `${c.name.short} keeps the ${BUILDINGS[bd.id].name}`, () => { assignKeeper(g, bd, c.id); this.sigs.insp = null; this.renderInspector(); }, 'good');
     }
-    if (w.walkable(x, y)) add('👣', `Move ${n === 1 ? who : n + ' people'} here`, () => { g.orderMove(ids, x, y); this.flash(`Moving ${n === 1 ? who : n + ' people'}`, 'info'); });
-    else if (!opts.length) add('👣', 'Move as close as they can', () => { g.orderMove(ids, x, y); this.flash(`Moving ${n === 1 ? who : n + ' people'}`, 'info'); });
+    if (w.walkable(x, y)) add('👣', `Move ${n === 1 ? who : n + ' people'} here`, () => { this.act(g, 'orderMove', ids, x, y); this.flash(`Moving ${n === 1 ? who : n + ' people'}`, 'info'); });
+    else if (!opts.length) add('👣', 'Move as close as they can', () => { this.act(g, 'orderMove', ids, x, y); this.flash(`Moving ${n === 1 ? who : n + ' people'}`, 'info'); });
 
     // Plain ground is just a move; anything more gets the menu.
     if (opts.length === 1) { opts[0].run(); return; }
@@ -21370,16 +21892,16 @@ class UI {
     if (!w.inside(x, y)) return false;
     const i = w.idx(x, y);
     const b = w.building[i];
-    if (b && !b.done) { g.rush(x, y); this.flash(`Rushing ${BUILDINGS[b.id].name}`, 'good'); return true; }
+    if (b && !b.done) { this.act(g, 'rush', x, y); this.flash(`Rushing ${BUILDINGS[b.id].name}`, 'good'); return true; }
     const f = w.feature[i];
     if (TERRAIN[w.terrain[i]].mineable || (f && FEATURES[f].inRock)) {
-      g.designate(x, y, 'mine'); g.rush(x, y);
+      this.act(g, 'designate', x, y, 'mine'); this.act(g, 'rush', x, y);
       this.renderer.cacheVersion = -1;
       this.flash('Rushing mining', 'good');
       return true;
     }
     if (f && !FEATURES[f].inRock) {
-      g.designate(x, y, 'harvest'); g.rush(x, y);
+      this.act(g, 'designate', x, y, 'harvest'); this.act(g, 'rush', x, y);
       this.renderer.cacheVersion = -1;
       this.flash('Rushing harvest', 'good');
       return true;
@@ -21466,7 +21988,7 @@ class UI {
     const g = this.game;
     if (!g.canEnterRift) { this.flash('The Rift is open and spewing — parties go in by day.', 'warn'); return; }
     const ids = this.partyIds();
-    const r = g.launchExpedition(null, ids);
+    const r = this.act(g, 'launchExpedition', null, ids);
     if (!r.ok) { this.flash(r.why, 'warn'); return; }
     this.squad.clear(); for (const id of r.ids) this.squad.add(id);
     this.squadChanged();
@@ -21692,10 +22214,28 @@ class UI {
       const dt = Math.min(0.25, Math.max(0, (now - last) / 1000));
       last = now;
       const g = this.game;
-      if (!this.paused && !g.gameOver) {
+      const co = this.coop;
+      if (co && co.role === 'guest') {
+        // A guest's clock is the host's: step towards the last tick it announced,
+        // quickly when behind, and never past it.
+        const G = co.guest;
+        this.speed = G.speed; this.paused = G.paused;
+        if (G.game === g) {
+          // advance() also runs orders due now, so one given while paused lands at once.
+          const until = now + 12;
+          do G.advance(8); while (G.behind > 0 && !G.waiting && performance.now() < until);
+        }
+        if (!this.paused) this.updateVisitors(dt);
+        this.renderCoopBadge();
+      } else if (!this.paused && !g.gameOver) {
         this.tickAcc += dt * TICKS_PER_SEC * (mult[this.speed] ?? 1);
-        while (this.tickAcc >= 1) { this.tickAcc -= 1; if (this.auto) autoplayStep(g, { build: false }); g.step(); }
+        const host = co && co.role === 'host' ? co.host : null;
+        while (this.tickAcc >= 1) { this.tickAcc -= 1; if (this.auto && !host) autoplayStep(g, { build: false }); g.step(); if (host) host.afterStep(); }
         this.updateVisitors(dt);
+      }
+      if (co && co.role === 'host') {
+        co.host.setClock(this.speed, this.paused || !!g.gameOver);
+        if (now - (co.lastFlush || 0) > 50) { co.lastFlush = now; co.host.flush(); }
       }
       // Autosave with the sunrise; and, if asked, stop the clock when a fight breaks out.
       if (this.slot && this.opts.autosave && !g.gameOver && g.hour >= 6 && this.lastAutoDay !== g.day) {
@@ -21703,7 +22243,7 @@ class UI {
         this.saveToSlot('auto');
       }
       const fighting = g.maps.some(m => m.field && m.field.units.size);
-      if (fighting && !this.wasFighting && this.opts.pauseOnFight && !this.paused) {
+      if (fighting && !this.wasFighting && this.opts.pauseOnFight && !this.paused && !(co && co.role === 'guest')) {
         this.paused = true; this.flash('A fight has broken out — paused (space to resume)', 'warn'); this.renderTop();
       }
       this.wasFighting = fighting;
@@ -22471,7 +23011,7 @@ class UI {
       const pick = e.target.closest && e.target.closest('[data-cls-pick]');
       if (en) {
         const [id, k] = en.dataset.clsEnroll.split(':');
-        const r = g.hasSchool(CLASS_INFO[k].school) ? g.enroll(+id, k) : g.readTome(+id, k);
+        const r = g.hasSchool(CLASS_INFO[k].school) ? this.act(g, 'enroll', +id, k) : this.act(g, 'readTome', +id, k);
         if (r) this.toast(r, 'warn'); else this.flash(`Training begins: ${CLASSES[k].name}.`, 'good');
       } else if (op || pick) {
         const id = +(op ? op.dataset.clsOpen : pick.dataset.clsPick);
@@ -22555,7 +23095,7 @@ class UI {
           `${v ? 5 - v : ''}${pas === 'burning' ? '<span class="fl" title="Burning passion"></span>' : pas === 'minor' ? '<span class="fl minor" title="Interested"></span>' : ''}`);
         cell.style.background = `rgba(255,255,255,${(0.03 + Math.min(20, sk) / 20 * 0.2).toFixed(3)})`;
         cell.title = `${c.name.short} — ${jobName[j] || j}\nSkill ${sk}${pas && pas !== 'none' ? ` (${pas} passion)` : ''}\nPriority: ${v ? 5 - v : 'never'}\nClick: more urgent · right-click: less urgent`;
-        const set = (nv) => { g.setPriority(c.id, j, (nv + 5) % 5); this.sigs.drawer = null; this.renderDrawer(); };
+        const set = (nv) => { this.act(g, 'setPriority', c.id, j, (nv + 5) % 5); this.sigs.drawer = null; this.renderDrawer(); };
         cell.onclick = () => set(v + 1);
         cell.oncontextmenu = (e) => { e.preventDefault(); set(v - 1); };
         td.appendChild(cell);
@@ -22651,7 +23191,7 @@ class UI {
     for (const v of [4, 3, 2, 1, 0]) {
       const btn = el('button', 'p' + (v ? 5 - v : 0), v ? `${lab(v)}${v === 4 ? ' · first' : v === 1 ? ' · last' : ''}` : 'Never');
       btn.onclick = () => {
-        for (const c of members) g.setPriority(c.id, this.bulkJob, v);
+        for (const c of members) this.act(g, 'setPriority', c.id, this.bulkJob, v);
         this.flash(`${this.bulkJob} set to ${lab(v)} for ${members.length} denizens`, 'good');
         this.sigs.insp = null;
         this.renderInspector();
@@ -22669,12 +23209,12 @@ class UI {
     const down = el('button', 'act primary', `🌀 Into the Rift (${inCamp.length})`);
     down.disabled = !inCamp.length || !g.canEnterRift;
     down.title = g.canEnterRift ? 'They walk to the gate and step through onto floor 1' : 'Nobody goes in until dawn';
-    down.onclick = () => { const r = g.launchExpedition(null, inCamp.map(c => c.id)); if (r.ok) this.flash(`${r.ids.length} head for the Rift Gate`, 'good'); };
+    down.onclick = () => { const r = this.act(g, 'launchExpedition', null, inCamp.map(c => c.id)); if (r.ok) this.flash(`${r.ids.length} head for the Rift Gate`, 'good'); };
     b.appendChild(down);
     const below = members.filter(c => c.mapId);
     if (below.length) {
       const up = el('button', 'act', `🏕️ Call back (${below.length})`);
-      up.onclick = () => { g.orderTravel(below.map(c => c.id), 'up', true); this.flash(`${below.length} climbing out of the Rift`, 'info'); };
+      up.onclick = () => { this.act(g, 'orderTravel', below.map(c => c.id), 'up', true); this.flash(`${below.length} climbing out of the Rift`, 'info'); };
       b.appendChild(up);
     }
 
@@ -23073,7 +23613,7 @@ class UI {
       if (here.length) {
         const back = el('button', 'act', 'Call back');
         back.title = 'Everyone on this floor climbs all the way out';
-        back.onclick = () => { g.orderTravel(here.map(c => c.id), 'up', true); this.flash(`${here.length} climbing out of the Rift`, 'info'); };
+        back.onclick = () => { this.act(g, 'orderTravel', here.map(c => c.id), 'up', true); this.flash(`${here.length} climbing out of the Rift`, 'info'); };
         acts.appendChild(back);
       }
       row.appendChild(acts);
@@ -23248,14 +23788,14 @@ class UI {
       const n = e.target.closest && e.target.closest('[data-tech]'); if (!n) return;
       const t = n.dataset.tech, st = state(t);
       if (st === 'done' || st === 'cur') return;
-      if (st === 'open') { g.setResearch(t); g.unqueueResearch(t); this.flash(`Now researching ${R[t].name}`, 'good'); }
-      else { g.queueResearch(t); this.flash(`Queued ${R[t].name} and its prerequisites`, 'good'); }
+      if (st === 'open') { this.act(g, 'setResearch', t); this.act(g, 'unqueueResearch', t); this.flash(`Now researching ${R[t].name}`, 'good'); }
+      else { this.act(g, 'queueResearch', t); this.flash(`Queued ${R[t].name} and its prerequisites`, 'good'); }
       this.renderDrawer();
     };
     tree.oncontextmenu = (e) => {
       const n = e.target.closest && e.target.closest('[data-tech]'); if (!n) return;
       e.preventDefault();
-      g.unqueueResearch(n.dataset.tech); this.renderDrawer();
+      this.act(g, 'unqueueResearch', n.dataset.tech); this.renderDrawer();
     };
     body.appendChild(tree);
     body.appendChild(el('div', 'rs-legend', `<span class="k-done">✓ Researched</span><span class="k-cur">⏳ Studying</span>
@@ -23299,10 +23839,10 @@ class UI {
             <div class="mini">🕓 waits ${Math.max(0, Math.round((a.expires - g.tick) / 60))}h more${a.fee ? ` · asks 🪙 ${a.fee}` : ' · asks nothing'}</div></div>`;
         const acts = el('div', 'tr-va');
         const accept = el('button', 'act primary', a.fee ? `Welcome (🪙${a.fee})` : 'Welcome');
-        accept.onclick = (e) => { e.stopPropagation(); g.acceptArrival(i); this.renderDrawer(); };
+        accept.onclick = (e) => { e.stopPropagation(); this.act(g, 'acceptArrival', i); this.renderDrawer(); };
         if (a.fee > gold) accept.disabled = true;
         const rej = el('button', 'act danger', 'Turn away');
-        rej.onclick = (e) => { e.stopPropagation(); g.rejectArrival(i); this.renderDrawer(); };
+        rej.onclick = (e) => { e.stopPropagation(); this.act(g, 'rejectArrival', i); this.renderDrawer(); };
         acts.appendChild(accept); acts.appendChild(rej);
         c.querySelector('.tr-vb').appendChild(acts);
         row.appendChild(c);
@@ -23331,7 +23871,7 @@ class UI {
         t.dataset.tip = 'res:' + res;
         t.innerHTML = `<div class="tr-ic">${RESOURCE_ICON[res] || '📦'}</div><div class="tr-n">${RESOURCES[res].name}</div>
           <div class="tr-q">${qty} in stock</div><div class="tr-p">10 for 🪙${price}</div>`;
-        t.onclick = () => { if (!can) return; g.buy(res, 10); this.flash(`Bought 10 ${RESOURCES[res].name} for ${price}g`, 'good'); this.renderDrawer(); };
+        t.onclick = () => { if (!can) return; this.act(g, 'buy', res, 10); this.flash(`Bought 10 ${RESOURCES[res].name} for ${price}g`, 'good'); this.renderDrawer(); };
         tg.appendChild(t);
       }
       if (cv.livestock && cv.livestock.count > 0) {
@@ -23342,7 +23882,7 @@ class UI {
         t.dataset.tip = 'species:' + L.species;
         t.innerHTML = `<div class="tr-ic">${ANIMAL_ICON[L.species] || '🐾'}</div><div class="tr-n">${A.name}</div>
           <div class="tr-q">${L.count} head</div><div class="tr-p">1 for 🪙${price}</div>`;
-        t.onclick = () => { if (!can) return; g.buyLivestock(1); this.flash(`Bought a ${A.name}`, 'good'); this.renderDrawer(); };
+        t.onclick = () => { if (!can) return; this.act(g, 'buyLivestock', 1); this.flash(`Bought a ${A.name}`, 'good'); this.renderDrawer(); };
         tg.appendChild(t);
       }
       theirs.appendChild(tg);
@@ -23358,7 +23898,7 @@ class UI {
         t.dataset.tip = 'res:' + res;
         t.innerHTML = `${wanted ? '<div class="tr-star">⭐</div>' : ''}<div class="tr-ic">${RESOURCE_ICON[res] || '📦'}</div>
           <div class="tr-n">${RESOURCES[res].name}</div><div class="tr-q">you have ${have}</div><div class="tr-p">10 for +🪙${val}</div>`;
-        t.onclick = () => { if (!can) return; g.sell(res, 10); this.flash(`Sold 10 ${RESOURCES[res].name} for ${val}g`, 'good'); this.renderDrawer(); };
+        t.onclick = () => { if (!can) return; this.act(g, 'sell', res, 10); this.flash(`Sold 10 ${RESOURCES[res].name} for ${val}g`, 'good'); this.renderDrawer(); };
         og.appendChild(t);
       }
       ours.appendChild(og);
@@ -23889,10 +24429,10 @@ class UI {
     const en = e.target.closest('[data-enroll]'), cn = e.target.closest('[data-cancel]');
     if (!en && !cn) return false;
     const g = this.game;
-    if (cn) g.cancelTraining(c.id);
+    if (cn) this.act(g, 'cancelTraining', c.id);
     else {
       const k = en.dataset.enroll;
-      const r = g.hasSchool(CLASS_INFO[k].school) ? g.enroll(c.id, k) : g.readTome(c.id, k);
+      const r = g.hasSchool(CLASS_INFO[k].school) ? this.act(g, 'enroll', c.id, k) : this.act(g, 'readTome', c.id, k);
       if (r) this.toast(r, 'warn');
     }
     this.sigs.insp = null; this.renderInspector();
@@ -23947,12 +24487,12 @@ class UI {
     this.magicClick = (e) => {
       const buy = e.target.closest('[data-buy]'), cp = e.target.closest('[data-copy]'), sl = e.target.closest('[data-sell]'), pt = e.target.closest('[data-part]'), wr = e.target.closest('[data-write]');
       let r = null;
-      if (buy) { const [from, kind, id] = buy.dataset.buy.split('|'); r = g.buyMagic(from, kind, id); }
-      else if (cp) r = g.copyBook(cp.dataset.copy);
-      else if (sl) r = g.sellBook(sl.dataset.sell);
+      if (buy) { const [from, kind, id] = buy.dataset.buy.split('|'); r = this.act(g, 'buyMagic', from, kind, id); }
+      else if (cp) r = this.act(g, 'copyBook', cp.dataset.copy);
+      else if (sl) r = this.act(g, 'sellBook', sl.dataset.sell);
       else if (pt) {
         const [kind, id] = pt.dataset.part.split('|');
-        if (!g.spellParts[kind].includes(id)) r = g.researchPart(kind, id);
+        if (!g.spellParts[kind].includes(id)) r = this.act(g, 'researchPart', kind, id);
         else {
           const d = this.spellDraft;
           if (kind === 'forms') d.form = id; else if (kind === 'elements') d.element = id;
@@ -23961,7 +24501,7 @@ class UI {
       } else if (wr) {
         const d = this.spellDraft;
         const name = `${SPELL_ELEMENTS[d.element].name} ${SPELL_FORMS[d.form].name}${d.mods.length ? ' of ' + d.mods.map(m => SPELL_MODS[m].name).join(' ') : ''}`;
-        r = g.designSpell(name, d.form, d.element, d.mods);
+        r = this.act(g, 'designSpell', name, d.form, d.element, d.mods);
       } else return false;
       if (r) this.toast(r, 'warn');
       this.sigs.drawer = null; this.renderDrawer();
@@ -24026,9 +24566,9 @@ class UI {
       const f = e.target.closest('[data-forge]'), l = e.target.closest('[data-legend]'), br = e.target.closest('[data-brew]'), ft = e.target.closest('[data-ftier]');
       let r = null;
       if (ft) { const [tid, sl] = ft.dataset.ftier.split(':'); r = forgeTier(g, sl, tid, this.forgeFor); }
-      else if (f) r = g.forge(f.dataset.forge);
-      else if (l) r = g.craftLegendary(l.dataset.legend);
-      else if (br) r = g.brew(br.dataset.brew);
+      else if (f) r = this.act(g, 'forge', f.dataset.forge);
+      else if (l) r = this.act(g, 'craftLegendary', l.dataset.legend);
+      else if (br) r = this.act(g, 'brew', br.dataset.brew);
       else return;
       if (r) this.toast(r, 'warn');
       this.sigs.drawer = null; this.renderDrawer();
@@ -24073,7 +24613,7 @@ class UI {
       c.belt = nb.filter(Boolean);
       this.sigs.insp = null; this.renderInspector();
     });
-    b.querySelectorAll('[data-unequip]').forEach(d => d.onclick = () => { g.unequip(c.id, d.dataset.unequip); this.sigs.insp = null; this.renderInspector(); });
+    b.querySelectorAll('[data-unequip]').forEach(d => d.onclick = () => { this.act(g, 'unequip', c.id, d.dataset.unequip); this.sigs.insp = null; this.renderInspector(); });
     const box = b.querySelector('#armory');
     if (!g.armory.length) box.appendChild(el('div', 'mini', 'Empty. Loot comes back from delves and raids; a smithy forges more.'));
     // Best first: what would help this character most.
@@ -24087,13 +24627,13 @@ class UI {
       row.innerHTML = `<span class="k">${SLOT_ICONS[sl]} <b style="color:${R.color}">${esc(it.name)}</b>${!why ? ` <span class="mini" style="color:${gain > 0 ? 'var(--good)' : 'var(--dim2)'}">${gain > 0 ? '▲' : '▼'}${Math.abs(Math.round(gain))}</span>` : ''}</span>`;
       const btn = el('button', 'act', why ? 'Can’t' : 'Equip');
       if (why) { btn.disabled = true; btn.dataset.tipt = why; }
-      btn.onclick = () => { const r = g.equip(c.id, i); if (r) this.toast(r, 'warn'); this.sigs.insp = null; this.renderInspector(); };
+      btn.onclick = () => { const r = this.act(g, 'equip', c.id, i); if (r) this.toast(r, 'warn'); this.sigs.insp = null; this.renderInspector(); };
       row.appendChild(btn);
       box.appendChild(row);
     }
     if ((g.resources.gear || 0) > 0) {
       const up = el('button', 'act primary', `Reinforce a piece (1 gear kit, ${Math.floor(g.resources.gear)} left)`);
-      up.onclick = () => { g.upgradeGear(c.id); this.sigs.insp = null; this.renderInspector(); };
+      up.onclick = () => { this.act(g, 'upgradeGear', c.id); this.sigs.insp = null; this.renderInspector(); };
       b.appendChild(up);
     }
   }
@@ -24169,8 +24709,8 @@ class UI {
       const nb = e.target.closest('[data-node]'), lo = e.target.closest('[data-lo]'), tac = e.target.closest('[data-tac]'), rs = e.target.closest('[data-respec]');
       const ps = e.target.closest('[data-prestige]'), ln = e.target.closest('[data-learn]');
       if (this.classChangeClick(e, c)) return;
-      if (ps) { const r = this.game.choosePrestige(c.id, ps.dataset.prestige); if (r) { this.toast(r, 'warn'); return; } }
-      else if (ln) { const r = this.game.learnBook(c.id, ln.dataset.learn); if (r) { this.toast(r, 'warn'); return; } }
+      if (ps) { const r = this.act(this.game, 'choosePrestige', c.id, ps.dataset.prestige); if (r) { this.toast(r, 'warn'); return; } }
+      else if (ln) { const r = this.act(this.game, 'learnBook', c.id, ln.dataset.learn); if (r) { this.toast(r, 'warn'); return; } }
       else if (tac) { c.tactics = tac.dataset.tac; }
       else if (lo) { toggleLoadout(c, lo.dataset.lo); }
       else if (rs) {
@@ -24300,7 +24840,7 @@ class UI {
         const btn = el('button', 'act' + (bd.crop === id ? ' primary' : ''), `${CROP_ICON[id] || '🌱'} ${CROPS[id].name} ${v > 0 ? pct(v) : '—'}`);
         btn.dataset.tip = 'crop:' + id;
         btn.disabled = v <= 0;
-        btn.onclick = () => { g.setCrop(x, y, id); bd.autoCrop = false; this.renderInspector(); };
+        btn.onclick = () => { this.act(g, 'setCrop', x, y, id); bd.autoCrop = false; this.renderInspector(); };
         picker.appendChild(btn);
       }
       box.appendChild(el('div', 'sect', 'Plant'));
@@ -24338,9 +24878,9 @@ class UI {
         () => this.openDrawer(BUILDINGS[bd.id].shop && !['trading_post', 'counting_house'].includes(BUILDINGS[bd.id].shop) ? 'trade' : 'services'));
     }
     if (bd && bd.done && bd.id === 'smithy') add('⚒️ Forge', () => this.openDrawer('workshop'));
-    if (terr.mineable || (f && FEATURES[f].inRock)) add('⛏️ Mine here', () => g.designate(x, y, 'mine'));
-    if (f && !FEATURES[f].inRock) add('🌿 Harvest', () => g.designate(x, y, 'harvest'));
-    if (w.designation[i] || (bd && !bd.done) || (fl && !fl.done)) add('🚫 Cancel', () => g.designate(x, y, 'cancel'), 'danger');
+    if (terr.mineable || (f && FEATURES[f].inRock)) add('⛏️ Mine here', () => this.act(g, 'designate', x, y, 'mine'));
+    if (f && !FEATURES[f].inRock) add('🌿 Harvest', () => this.act(g, 'designate', x, y, 'harvest'));
+    if (w.designation[i] || (bd && !bd.done) || (fl && !fl.done)) add('🚫 Cancel', () => this.act(g, 'designate', x, y, 'cancel'), 'danger');
     if (!box.childElementCount) box.appendChild(el('div', 'mini', 'Nothing to order here.'));
   }
 
@@ -24400,7 +24940,7 @@ class UI {
       else if (t.dataset.reforge) { const [cid, sl] = t.dataset.reforge.split(':'); res = merchantReforge(v, r, +cid, sl); }
       else if (t.dataset.rob != null) {
         robMerchant(v, r);
-        g.orderAttack(here.map(c => c.id), r.id);
+        this.act(g, 'orderAttack', here.map(c => c.id), r.id);
         b.onclick = null; this.sigs.insp = null; this.renderInspector();
         return;
       }
@@ -24470,7 +25010,7 @@ class UI {
         const sel = document.createElement('select');
         sel.innerHTML = `<option value="">Nobody — stays at the pasture</option>`
           + g.colonists.filter(c => !c.dead).map(c => `<option value="${c.id}"${b.handler === c.id ? ' selected' : ''}>${esc(c.name.short)} · ${esc(c.title || CLASSES[c.klass].name)}</option>`).join('');
-        sel.onchange = () => { g.setHandler(b.id, sel.value ? +sel.value : null); this.sigs.insp = null; this.renderInspector(); };
+        sel.onchange = () => { this.act(g, 'setHandler', b.id, sel.value ? +sel.value : null); this.sigs.insp = null; this.renderInspector(); };
         row.appendChild(sel);
         box.appendChild(row);
         box.appendChild(el('div', 'mini', A.war
@@ -24478,7 +25018,7 @@ class UI {
           : `Follows its handler into the Rift and carries ${A.pack * PACK_PER_LOAD} more for them. Tip: select someone and right-click the beast.`));
       }
       const bt = el('button', 'act danger', b.markedButcher ? 'Cancel slaughter' : '🔪 Slaughter');
-      bt.onclick = () => { g.markButcher(b.id); this.sigs.insp = null; this.renderInspector(); };
+      bt.onclick = () => { this.act(g, 'markButcher', b.id); this.sigs.insp = null; this.renderInspector(); };
       box.appendChild(bt);
     } else {
       box.appendChild(el('div', 'mini', g.world.findBuildings('pasture').length
@@ -24687,6 +25227,166 @@ class UI {
     g.appendChild(b);
   }
 
+  // ------------------------------------------------------------ co-op --
+  /**
+   * Every order a player gives goes through here. Solo it is a plain call. The
+   * co-op host runs it now and stamps it into the command stream; a guest sends
+   * it to the host and gets back a stand-in answer, because the real one comes
+   * with the tick the host runs it on (and a refusal comes back as a toast).
+   */
+  act(target, op, ...args) {
+    const c = this.coop;
+    if (!c) return target[op](...args);
+    const mapId = target && target._m ? target._m.id : 0;
+    if (c.role === 'host') return c.host.issue(0, op, mapId, args);
+    if (!c.guest.issue(op, mapId, args)) { this.flash('Still syncing with the host…', 'warn'); return null; }
+    if (op === 'launchExpedition') return { ok: true, ids: args[1] || [] };
+    if (op === 'orderRescue' || op === 'orderTame') return this.game.colonists.find(k => (args[0] || []).includes(k.id)) || null;
+    const p = COOP_OPS[op];
+    return p && typeof p === 'object' ? { ...p } : p;
+  }
+
+  /** A guest touching the clock: the host's clock rules, so ask instead. True means "stop here". */
+  guestTime(what) {
+    const c = this.coop;
+    if (!c || c.role !== 'guest') return false;
+    c.net.send({ t: 'ask', what });
+    this.flash(`The host controls time. Asked them to ${what}.`, 'info');
+    return true;
+  }
+
+  /** Open this colony to friends: a 4-digit code they type into Join World. */
+  async openCoop() {
+    if (this.coop || this.coopBusy) return;
+    if (this.game.gameOver) { this.flash('This colony has fallen.', 'warn'); return; }
+    this.coopBusy = true;
+    this.flash('Opening the world to co-op…', 'info');
+    try {
+      let host = null;
+      const net = await netHost({
+        makeCode: () => coopNewCode(),
+        onMessage: (peer, msg) => host && host.receive(peer, msg),
+        onJoin: () => {},
+        onLeave: (peer) => host && host.drop(peer),
+        onError: (why) => this.flash('Co-op: ' + why, 'warn'),
+      });
+      host = new CoopHost(this.game, {
+        code: net.code, name: 'Host', send: (peer, msg) => net.send(peer, msg),
+        onEvent: (e) => this.coopEvent(e),
+      });
+      // The steward's orders don't go through the command stream.
+      this.auto = false;
+      this.coop = { role: 'host', host, net, code: net.code };
+      this.flash(`Co-op open — code ${net.code}`, 'good');
+    } catch (e) {
+      this.flash('Could not open co-op: ' + (e && e.message ? e.message : e), 'warn');
+    } finally {
+      this.coopBusy = false;
+      this.renderCoopBadge();
+      if (!$('#gamemenu').classList.contains('hidden')) this.showGameMenu(true);
+    }
+  }
+
+  /** Join a friend's world by its code. `status(text, kind)` reports progress to the title screen. */
+  async joinCoop(code, status = () => {}) {
+    if (this.coop || this.coopBusy) return;
+    if (!/^\d{4}$/.test(code)) { status('A world code is four digits.', 'warn'); return; }
+    this.coopBusy = true;
+    status(`Looking for world ${code}…`, 'info');
+    let guest = null, net = null, done = false;
+    const fail = (why) => {
+      if (done) return; done = true;
+      status(why, 'warn');
+      if (net) net.close();
+      if (this.coop && this.coop.guest === guest) { this.coop = null; this.renderCoopBadge(); }
+    };
+    try {
+      net = await netJoin(code, {
+        onMessage: (msg) => guest && guest.receive(msg),
+        onClose: () => {
+          if (!done) { fail('The host closed the connection.'); return; }
+          if (this.coop && this.coop.guest === guest) this.leaveCoop('The host closed the world.');
+        },
+        onError: (why) => this.flash('Co-op: ' + why, 'warn'),
+      });
+      guest = new CoopGuest({
+        send: (msg) => net.send(msg),
+        load: (text) => coopLoad(text),
+        onEvent: (e) => {
+          if (e.kind === 'loaded') {
+            const first = !this.coop || this.coop.guest !== guest || !this.coop.live;
+            if (first) {
+              done = true;
+              this.slot = null; this.auto = false;
+              this.colonyName = `Co-op world ${code}`;
+              this.coop = { role: 'guest', guest, net, code, live: true };
+              this.installGame(e.game);
+              this.hideTitle();
+              this.flash(`Joined world ${code} as player ${guest.player + 1}`, 'good');
+            } else {
+              // A resync: keep the camera where it was.
+              const r = this.renderer;
+              this.installGame(e.game, { mapId: this.mapId, cams: { ...this.cams, [this.mapId]: { x: r.camX, y: r.camY, tile: r.tile } } });
+              this.flash('Back in step with the host.', 'good');
+            }
+            this.renderCoopBadge();
+          } else if (e.kind === 'refused') fail(e.why);
+          else if (e.kind === 'result') this.flash(e.msg, 'warn');
+          else if (e.kind === 'desync') { this.flash('Out of step with the host — fetching their world…', 'warn'); this.renderCoopBadge(); }
+        },
+      });
+      this.coop = { role: 'guest', guest, net, code, live: false };
+      guest.hello('Player');
+      setTimeout(() => { if (!done) fail('The host did not answer. Check the code and try again.'); }, 20000);
+    } catch (e) {
+      fail(e && e.message ? e.message : String(e));
+    } finally {
+      this.coopBusy = false;
+    }
+  }
+
+  /** Host: close the world. Guest: leave it, back to the title. */
+  leaveCoop(why) {
+    const c = this.coop;
+    if (!c) return;
+    this.coop = null;
+    try { c.net.close(); } catch (e) { /* already gone */ }
+    this.renderCoopBadge();
+    if (c.role === 'guest') {
+      this.flash(why || 'Left the co-op world.', why ? 'warn' : 'info');
+      this.showTitle();
+    } else this.flash(why || 'Co-op closed. The colony is yours alone again.', 'info');
+  }
+
+  coopEvent(e) {
+    const who = e.player ? `${e.player.name} ${e.player.id + 1}` : 'A player';
+    if (e.kind === 'join') this.flash(`${who} joined the world`, 'good');
+    else if (e.kind === 'leave') this.flash(`${who} left the world`, 'info');
+    else if (e.kind === 'resync') this.flash(`${who} drifted out of step and was resynced (${e.reason})`, 'warn');
+    else if (e.kind === 'ask') this.flash(`${who} asks you to ${e.what}`, 'info');
+    this.renderCoopBadge();
+  }
+
+  /** The chip in the corner: the code, who's in, and (for a guest) whether we're in step. */
+  renderCoopBadge() {
+    const b = typeof document !== 'undefined' && $('#coopbadge');
+    if (!b) return;
+    const c = this.coop;
+    if (!c || (c.role === 'guest' && !c.live)) { b.classList.add('hidden'); this.coopBadgeSig = null; return; }
+    let n, state = '';
+    if (c.role === 'host') n = c.host.players.length;
+    else {
+      const G = c.guest;
+      n = G.players.length || 2;
+      state = G.waiting ? ' · <em class="warn">resyncing…</em>' : G.behind > 30 ? ` · <em>catching up ${G.behind}</em>` : ' · <em class="good">in step</em>';
+    }
+    const sig = `${c.code}|${n}|${state}`;
+    if (sig === this.coopBadgeSig) return;
+    this.coopBadgeSig = sig;
+    b.classList.remove('hidden');
+    b.innerHTML = `🤝 <b>${c.code}</b> · ${n} player${n === 1 ? '' : 's'}${c.role === 'guest' ? ' · guest' : ''}${state}`;
+  }
+
   // ---------------------------------------------------------- saving --
   /** The UI bits worth keeping with a save: which map was on screen, the cameras, the party. */
   uiSnapshot() {
@@ -24715,6 +25415,8 @@ class UI {
 
   /** Swap a game in: a loaded one, or a fresh one. Resets everything the old run left on screen. */
   installGame(game, ui = {}) {
+    // Another colony replacing the hosted one closes the world first.
+    if (this.coop && this.coop.role === 'host' && this.coop.host.game !== game) this.leaveCoop();
     this.game = game;
     this.seed = game.seedString;
     const r = this.renderer;
@@ -24763,6 +25465,8 @@ class UI {
    * idling behind it, paused, so the game is the backdrop.
    */
   showTitle() {
+    // Back at the title, a hosted world closes and a guest leaves.
+    if (this.coop && (this.coop.role === 'host' || this.coop.live)) this.leaveCoop();
     this.paused = true;
     this.hideGameMenu(); this.hide('#options'); this.hide('#modal');
     const box = $('#title');
@@ -24788,7 +25492,12 @@ class UI {
           <div class="ts-acts"><button class="act primary" data-act="new">New colony</button></div>
         </div>`);
     }
-    box.innerHTML = `<div class="ts-wrap">
+    box.innerHTML = `<div class="ts-join">
+        <label for="ts-code">Join World</label>
+        <div class="ts-join-row"><input id="ts-code" maxlength="4" inputmode="numeric" autocomplete="off" placeholder="0000" aria-label="4-digit world code"><button class="act primary" data-act="join">Join</button></div>
+        <div class="ts-join-msg mini"></div>
+      </div>
+      <div class="ts-wrap">
         <div class="ts-logo">RIFT GATE</div>
         <div class="ts-tag">SSS Class Dungeon Colony Sim</div>
         <div class="ts-slots">${slots.join('')}</div>
@@ -24799,6 +25508,7 @@ class UI {
       const b = e.target.closest && e.target.closest('button'); if (!b) return;
       const act = b.dataset.act;
       if (act === 'options') { this.showOptions(); return; }
+      if (act === 'join') { this.titleJoin(); return; }
       const n = +b.closest('[data-slot]').dataset.slot;
       if (act === 'load') { if (await this.loadFromSlot(n)) this.hideTitle(); }
       else if (act === 'new') this.showNewColony(n);
@@ -24807,6 +25517,19 @@ class UI {
         else { b.dataset.armed = '1'; b.textContent = 'Delete?'; b.classList.add('danger'); }
       }
     };
+    const code = $('#ts-code');
+    if (code) {
+      code.oninput = () => { code.value = code.value.replace(/\D/g, '').slice(0, 4); };
+      code.onkeydown = (e) => { if (e.key === 'Enter') this.titleJoin(); };
+    }
+  }
+
+  /** The Join World box on the title screen. */
+  titleJoin() {
+    const inp = $('#ts-code'), msg = $('#title .ts-join-msg');
+    const code = (inp && inp.value || '').trim();
+    const status = (text, kind) => { if (msg) { msg.textContent = text; msg.className = 'ts-join-msg mini ' + (kind || ''); } };
+    this.joinCoop(code, status);
   }
 
   hideTitle() {
@@ -24884,15 +25607,23 @@ class UI {
   }
 
   // -------------------------------------------------------- game menu --
-  showGameMenu() {
+  showGameMenu(refresh = false) {
     const box = $('#gamemenu');
-    this.menuWasPaused = this.paused;
-    this.paused = true;
+    // In co-op the clock is everyone's, so the menu doesn't stop it.
+    if (!refresh && !this.coop) { this.menuWasPaused = this.paused; this.paused = true; }
     this.renderTop();
     box.classList.remove('hidden');
+    const c = this.coop;
+    const coopHtml = !c ? `<button class="act" data-act="coop"${this.coopBusy ? ' disabled' : ''} data-tipt="Let up to 3 friends into this colony. They type the 4-digit code into Join World on their title screen.">🤝 ${this.coopBusy ? 'Opening…' : 'Open to Co-op'}</button>`
+      : c.role === 'host' ? `<div class="gm-coop"><div class="mini">Co-op is open. Friends join with</div><div class="gm-code">${c.code}</div>
+          <div class="mini">${c.host.players.length} of 4 players · ${c.host.guests.map(p => esc(p.name) + ' ' + (p.id + 1)).join(', ') || 'waiting for friends'}</div></div>
+          <button class="act" data-act="coopclose">Close co-op</button>`
+      : `<div class="gm-coop"><div class="mini">You are a guest in world</div><div class="gm-code">${c.code}</div></div>
+          <button class="act" data-act="coopleave">Leave world</button>`;
     box.innerHTML = `<div class="gm-card">
-        <div class="gm-h">Paused</div>
+        <div class="gm-h">${this.coop ? 'Menu' : 'Paused'}</div>
         <button class="act primary" data-act="resume">Resume</button>
+        ${coopHtml}
         <button class="act" data-act="save"${this.slot ? '' : ' disabled title="This run has no save slot (it was started from a ?seed= link)"'}>💾 Save now${this.slot ? ` (slot ${this.slot})` : ''}</button>
         <button class="act" data-act="options">🛠️ Options</button>
         <button class="act" data-act="help">❓ Controls</button>
@@ -24907,6 +25638,9 @@ class UI {
       else if (act === 'options') this.showOptions();
       else if (act === 'help') { this.hideGameMenu(); this.toggleHelp(); }
       else if (act === 'quit') { await this.saveToSlot('auto'); this.hideGameMenu(); this.showTitle(); }
+      else if (act === 'coop') { this.openCoop(); this.showGameMenu(true); }
+      else if (act === 'coopclose') { this.leaveCoop(); this.showGameMenu(true); }
+      else if (act === 'coopleave') { this.hideGameMenu(); this.leaveCoop(); }
     };
   }
 
@@ -24914,7 +25648,7 @@ class UI {
     const box = $('#gamemenu');
     if (!box || box.classList.contains('hidden')) return;
     box.classList.add('hidden');
-    this.paused = !!this.menuWasPaused;
+    if (!this.coop) this.paused = !!this.menuWasPaused;
     this.renderTop();
   }
 }

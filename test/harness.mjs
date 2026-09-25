@@ -55,6 +55,7 @@ import { sendJourney, siteErrand, upgradePack, PACK_STEP } from '../src/economy.
 import { fileURLToPath } from 'node:url';
 import { UI } from '../src/ui.js';
 import { tipHtml, mapTipKey } from '../src/tips.js';
+import { CoopHost, CoopGuest, coopLoad, coopFullHash, coopQuickSig, coopCounters, coopSetCounters, coopNewCode, COOP_OPS, COOP_HASH_EVERY } from '../src/coop.js';
 
 const argv = process.argv.slice(2);
 const BENCH = argv.includes('--bench');
@@ -2413,6 +2414,96 @@ describe('Onboarding & legibility', () => {
     const src = readFileSync(fileURLToPath(new URL('../src/' + f, import.meta.url)), 'utf8');
     ok(!/TRAITS\[t\]\.name/.test(src), `${f} draws traits through kw(), not by name`);
   }
+});
+
+describe('Co-op lockstep and the desync fail-safe', () => {
+  // Every game in this process shares the module-level id counters, so each
+  // one gets its own set swapped in while it runs, as it would in its own tab.
+  const ctr = new WeakMap();
+  const on = (g, fn) => { if (ctr.has(g)) coopSetCounters(ctr.get(g)); const r = fn(); ctr.set(g, coopCounters()); return r; };
+
+  // A saved and reloaded game hashes the same as the one it came from.
+  const g0 = new Game('coop-hash');
+  for (let i = 0; i < TICKS_PER_DAY * 2; i++) { autoplayStep(g0); g0.step(); }
+  const h0 = coopFullHash(g0), q0 = coopQuickSig(g0);
+  const back = coopLoad(saveState(g0));
+  ok(coopFullHash(back) === h0 && coopQuickSig(back) === q0, 'a game and its reload hash identically, so a joining guest starts in step');
+  back.resources.gold += 1;
+  ok(coopFullHash(back) !== h0 && coopQuickSig(back) !== q0, 'one gold of drift changes both the signature and the full hash');
+  ok(/^\d{4}$/.test(coopNewCode()) && coopNewCode(() => 0) === '0000' && coopNewCode(() => 0.99999) === '9999', 'room codes are always four digits');
+  let t0 = performance.now();
+  coopFullHash(g0);
+  info(`full hash on day 3: ${(performance.now() - t0).toFixed(1)} ms`);
+
+  // A host and three guests on links with random delay (each link keeps its order).
+  const hg = new Game('coop-room'); ctr.set(hg, coopCounters());
+  const rnd = new RNG('coop-net');
+  let now = 0;
+  const wire = [];                                   // [deliverAt, to, msg]
+  const lastAt = new Map();
+  const post = (to, msg) => {
+    const at = Math.max(lastAt.get(to) || 0, now + rnd.int(0, 6));
+    lastAt.set(to, at);
+    wire.push([at, to, JSON.parse(JSON.stringify(msg))]);
+  };
+  const H = new CoopHost(hg, { code: '4821', send: (peer, msg) => { if (peer == null) { for (const p of H.guests) post(p.peer, msg); } else post(peer, msg); } });
+  const guests = [];
+  const addGuest = (name) => {
+    const G = new CoopGuest({ send: (msg) => post('host:' + name, msg), load: (text) => { const g = coopLoad(text); ctr.set(g, coopCounters()); return g; } });
+    G.name = name; guests.push(G);
+    G.hello(name);
+    return G;
+  };
+  const deliver = () => {
+    wire.sort((a, b) => a[0] - b[0]);
+    while (wire.length && wire[0][0] <= now) {
+      const [, to, msg] = wire.shift();
+      if (String(to).startsWith('host:')) on(hg, () => H.receive(to.slice(5), msg));
+      else { const G = guests.find(x => x.name === to); if (G) G.receive(msg); }
+    }
+  };
+  // Random, plain-data orders, as a player would click them.
+  const randomOrder = (g, r) => {
+    const cs = g.colonists.filter(c => !c.dead && !c.away && !(c.mapId || 0));
+    const x = r.int(2, g.world.w - 3), y = r.int(2, g.world.h - 3);
+    switch (r.int(0, 5)) {
+      case 0: return ['designate', [x, y, r.pick(['mine', 'harvest', 'cancel'])]];
+      case 1: return ['build', [x, y, r.pick(['wall', 'bed', 'farm', 'torch'])]];
+      case 2: return cs.length ? ['orderMove', [[r.pick(cs).id], x, y]] : null;
+      case 3: return cs.length ? ['setPriority', [r.pick(cs).id, r.pick(['haul', 'build', 'mine', 'cut']), r.int(0, 4)]] : null;
+      case 4: return ['queueResearch', [r.pick(Object.keys(RESEARCH))]];
+      default: return ['rush', [x, y]];
+    }
+  };
+  const orders = new RNG('coop-orders');
+  const G1 = addGuest('p1');
+  const G2 = addGuest('p2');
+  let late = null, poked = false;
+  const DAYS = 3;
+  for (let f = 0; f < TICKS_PER_DAY * DAYS; f++) {
+    now = f;
+    on(hg, () => { hg.step(); H.afterStep(); });
+    if (f % 7 === 0) { const o = on(hg, () => randomOrder(hg, orders)); if (o) on(hg, () => H.issue(0, o[0], 0, o[1])); }
+    for (const G of guests) if (G.game && f % 11 === 3) { const o = on(G.game, () => randomOrder(G.game, orders)); if (o) G.issue(o[0], 0, o[1]); }
+    on(hg, () => H.flush());
+    deliver();
+    for (const G of guests) if (G.game) on(G.game, () => G.advance(orders.int(0, 3)));
+    if (f === TICKS_PER_DAY) late = addGuest('p3');
+    // Knock one guest out of step on purpose: it has to notice and heal itself.
+    if (f === TICKS_PER_DAY + 500 && G2.game) { G2.game.colonists.find(c => !c.dead).x += 1; poked = true; }
+  }
+  // Let the wire drain and everyone catch up.
+  for (let k = 0; k < 200; k++) { now++; on(hg, () => H.flush(true)); deliver(); for (const G of guests) if (G.game) on(G.game, () => G.advance()); }
+  const hh = on(hg, () => coopFullHash(hg));
+  ok(H.players.length === 4 && guests.every(G => G.game && !G.waiting), 'three guests joined, one of them a day late through a snapshot');
+  ok(guests.every(G => G.game.tick_ === hg.tick_), 'every guest caught up to the host clock', guests.map(G => G.game.tick_).join(' ') + ' vs ' + hg.tick_);
+  ok(guests.every(G => on(G.game, () => coopFullHash(G.game)) === hh), 'after three days of orders from four players, every guest hashes the same as the host');
+  ok(G1.checks.quick >= TICKS_PER_DAY * DAYS / 60 - 2 && G1.checks.full >= Math.floor(TICKS_PER_DAY * DAYS / COOP_HASH_EVERY) - 1, 'guests checked the host numbers every hour and the full hash twice a day', `${G1.checks.quick} quick, ${G1.checks.full} full`);
+  ok(G1.checks.resyncs === 0 && late.checks.resyncs === 0, 'guests left alone never needed a resync');
+  ok(poked && G2.checks.resyncs === 1, 'a guest knocked out of step caught it at the next check and reloaded the host save', `${G2.checks.resyncs} resyncs`);
+  ok(Object.keys(COOP_OPS).every(op => typeof hg[op] === 'function'), 'every co-op order is a real game method');
+  const r = on(hg, () => H.issue(0, 'eval', 0, []));
+  ok(typeof r === 'string' && /Unknown/.test(r), 'orders outside the list are refused');
 });
 
 describe('Shipped single-file build', () => {

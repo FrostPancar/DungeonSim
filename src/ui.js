@@ -44,6 +44,8 @@ import { meter, spark, stack, legendRow, gauge, statTile, bars, heatStrip, seqSt
 import { tipHtml, mapTipKey, foodDaysOf, itemTipKey } from './tips.js';
 import { saveState, loadState, saveSummary } from './save.js';
 import { installPixIcons } from './pixicons.js';
+import { CoopHost, CoopGuest, coopLoad, coopNewCode, COOP_OPS } from './coop.js';
+import { netHost, netJoin } from './net.js';
 import {
   shopsOf, builtLevel, itemPrice, itemBuyback, potionPrice, beastPrice, mercFee, mercWage, VISITORS, traderOf,
   buyItem, sellItem, buyPotion, sellPotion, buyBeast, hireMerc, dismissMerc, buyCurio, CURIO_PRICES, sellTrophy, TROPHY_PRICE,
@@ -465,7 +467,7 @@ export class UI {
         if (!this.spaceHeld) { this.spaceHeld = true; this.spaceMovedCam = false; }
         return;
       }
-      if (k >= '1' && k <= '4') { this.speed = +k; this.paused = false; this.renderTop(); }
+      if (k >= '1' && k <= '4') { if (this.guestTime('speed ' + k)) return; this.speed = +k; this.paused = false; this.renderTop(); }
       else if (k === 'escape') {
         if (!$('#modal').classList.contains('hidden')) { this.hide('#modal'); return; }
         if (!$('#help').classList.contains('hidden')) { this.hide('#help'); return; }
@@ -510,11 +512,12 @@ export class UI {
       if (e.key.toLowerCase() !== ' ') return;
       this.spaceHeld = false;
       // A tap of space pauses; a space-drag was a pan and must not also pause.
-      if (!this.spaceMovedCam) { this.paused = !this.paused; this.renderTop(); }
+      if (!this.spaceMovedCam && !this.guestTime(this.paused ? 'resume' : 'pause')) { this.paused = !this.paused; this.renderTop(); }
     });
 
     $('#datebox .spd').addEventListener('click', (e) => {
       const b = e.target.closest('button'); if (!b) return;
+      if (this.guestTime(b.dataset.spd === 'p' ? (this.paused ? 'resume' : 'pause') : 'speed ' + b.dataset.spd)) return;
       if (b.dataset.spd === 'p') this.paused = !this.paused;
       else { this.speed = +b.dataset.spd; this.paused = false; }
       this.renderTop();
@@ -540,9 +543,15 @@ export class UI {
       this.renderer.overlay = this.renderer.overlay === 'soil' ? 'water' : this.renderer.overlay === 'water' ? null : 'soil';
       this.renderTop();
     });
-    $('#autobtn').addEventListener('click', () => { this.auto = !this.auto; this.renderTop(); });
+    $('#autobtn').addEventListener('click', () => {
+      // The steward acts outside the command stream, so in co-op it would pull the players apart.
+      if (this.coop) { this.flash('The steward is off in co-op: its orders would only happen on one screen.', 'warn'); return; }
+      this.auto = !this.auto; this.renderTop();
+    });
     $('#helpbtn').addEventListener('click', () => this.toggleHelp());
     $('#menubtn').addEventListener('click', () => this.showGameMenu());
+    const cb = $('#coopbadge');
+    if (cb) cb.addEventListener('click', () => this.showGameMenu());
     // Leaving the tab (or closing it) saves, so a run is never lost to a refresh.
     if (typeof document !== 'undefined' && document.addEventListener) {
       document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') this.saveToSlot('auto'); });
@@ -607,7 +616,7 @@ export class UI {
       if (gz.dataset.locked) {
         const tech = gz.dataset.tech, R = RESEARCH[tech];
         if (this.game.research.done.has(tech)) return;
-        this.game.queueResearch(tech);
+        this.act(this.game, 'queueResearch', tech);
         this.flash(`${BUILDINGS[gz.dataset.locked].name} needs ${R ? R.name : tech} — queued for research`, 'info');
         this.sigs.drawer = null; this.renderDrawer();
         return;
@@ -821,11 +830,11 @@ export class UI {
     if (big) { x0 = x1; y0 = y1; }
     for (let y = Math.min(y0, y1); y <= Math.max(y0, y1); y++)
       for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++) {
-        if (t.mode === 'mine') n += g.designate(x, y, 'mine') ? 1 : 0;
-        else if (t.mode === 'harvest') n += g.designate(x, y, 'harvest') ? 1 : 0;
-        else if (t.mode === 'cancel') n += g.designate(x, y, 'cancel') ? 1 : 0;
-        else if (t.mode === 'build') n += g.build(x, y, t.id) ? 1 : 0;
-        else if (t.mode === 'floor') n += g.buildFloor(x, y, t.id) ? 1 : 0;
+        if (t.mode === 'mine') n += this.act(g, 'designate', x, y, 'mine') ? 1 : 0;
+        else if (t.mode === 'harvest') n += this.act(g, 'designate', x, y, 'harvest') ? 1 : 0;
+        else if (t.mode === 'cancel') n += this.act(g, 'designate', x, y, 'cancel') ? 1 : 0;
+        else if (t.mode === 'build') n += this.act(g, 'build', x, y, t.id) ? 1 : 0;
+        else if (t.mode === 'floor') n += this.act(g, 'buildFloor', x, y, t.id) ? 1 : 0;
       }
     this.renderer.cacheVersion = -1;
     // Say what happened. A drag that ordered nothing used to look identical to
@@ -859,19 +868,19 @@ export class UI {
       add(way === 'up' ? '⬆️' : '🌀', where[0].toUpperCase() + where.slice(1), () => {
         if (way === 'down' && m.kind === 'camp' && !g.canEnterRift) { this.flash('The Rift is open and spewing — nobody goes in until dawn.', 'warn'); return; }
         if (way === 'down' && m.kind === 'floor' && m.depth >= g.floorCount) { this.flash('This is the bottom of the Rift today.', 'warn'); return; }
-        this.game.orderTravel(ids, way);
+        this.act(this.game, 'orderTravel', ids, way);
         this.flash(`${who} ${n === 1 ? 'heads' : 'head'} ${where}`, 'good');
       }, 'good');
     }
     // One of ours down on the ground: the nearest of the selection carries them out.
     const hurt = g.here.find(c => c.downed && !c.carriedBy && c.x === x && c.y === y);
     if (hurt) add('🩹', `Carry ${hurt.name.short} to safety`, () => {
-      const r = this.game.orderRescue(ids, hurt.id);
+      const r = this.act(this.game, 'orderRescue', ids, hurt.id);
       this.flash(r ? `${r.name.short} goes to carry ${hurt.name.short} to safety` : `Nobody selected can carry ${hurt.name.short}`, r ? 'good' : 'warn');
     }, 'good');
     // A friend standing there (not one of the selection): walk over and trade places.
     const friend = g.here.find(c => !c.downed && !c.dead && !ids.includes(c.id) && c.x === x && c.y === y);
-    if (friend && n === 1) add('🔄', `Swap places with ${friend.name.short}`, () => { g.orderMove(ids, x, y); this.flash(`${who} swaps places with ${friend.name.short}`, 'info'); });
+    if (friend && n === 1) add('🔄', `Swap places with ${friend.name.short}`, () => { this.act(g, 'orderMove', ids, x, y); this.flash(`${who} swaps places with ${friend.name.short}`, 'info'); });
     // Beasts: ours can be given a handler or slaughtered; wild ones tamed or hunted.
     const beast = g.beasts.find(b => !b.dead && b.x === x && b.y === y);
     if (beast && beast.tame) {
@@ -879,27 +888,27 @@ export class UI {
       if (canFollow(beast)) {
         const same = beast.handler === lead.id;
         add('🦮', same ? `${beast.name} stops following ${lead.name.short}` : `${beast.name} follows ${lead.name.short}`, () => {
-          this.game.setHandler(beast.id, same ? null : lead.id);
+          this.act(this.game, 'setHandler', beast.id, same ? null : lead.id);
           this.flash(same ? `${beast.name} no longer follows ${lead.name.short}` : `${beast.name} now follows ${lead.name.short}`, 'good');
           this.sigs.insp = null;
         });
       }
-      add('🔪', beast.markedButcher ? `Spare ${beast.name}` : `Mark ${beast.name} for slaughter`, () => { this.game.markButcher(beast.id); this.sigs.insp = null; }, 'danger');
+      add('🔪', beast.markedButcher ? `Spare ${beast.name}` : `Mark ${beast.name} for slaughter`, () => { this.act(this.game, 'markButcher', beast.id); this.sigs.insp = null; }, 'danger');
     } else if (beast) {
       const A = ANIMALS[beast.species];
       add('🤝', `Tame the ${A.name}${A.wildAggressive ? ' (dangerous)' : ''}`, () => {
-        const c = this.game.orderTame(ids, beast.id);
+        const c = this.act(this.game, 'orderTame', ids, beast.id);
         this.flash(c ? `${c.name.short} tries to tame the ${A.name}` : 'Nobody free to do it', c ? 'good' : 'warn');
       }, 'good');
       add('⚔️', `Hunt the ${A.name}`, () => {
-        const k = this.game.orderHunt(ids, beast.id);
+        const k = this.act(this.game, 'orderHunt', ids, beast.id);
         this.flash(k ? `${who} ${n === 1 ? 'hunts' : 'hunt'} the ${A.name}` : 'Nobody free to do it', k ? 'warn' : 'info');
       }, 'danger');
     }
     // Someone else's people: talk to the neutral ones, fight anyone.
     const r = g.raiders.find(r => r.hp > 0 && r.x === x && r.y === y);
     if (r && r.neutral) add('💬', `Talk to ${r.name.short}`, () => { this.sel = { kind: 'enemy', id: r.id, ref: r }; this.sigs.insp = null; this.renderInspector(); }, 'good');
-    if (r) add('⚔️', `Attack ${r.name.short}${r.neutral ? ' (they are neutral)' : ''}`, () => { g.orderAttack(ids, r.id); this.flash(`${who} ${n === 1 ? 'attacks' : 'attack'} ${r.name.short}`, 'warn'); }, 'danger');
+    if (r) add('⚔️', `Attack ${r.name.short}${r.neutral ? ' (they are neutral)' : ''}`, () => { this.act(g, 'orderAttack', ids, r.id); this.flash(`${who} ${n === 1 ? 'attacks' : 'attack'} ${r.name.short}`, 'warn'); }, 'danger');
     // Something workable: everyone takes a side of it and works it at once.
     const job = g.siteJobAt(x, y);
     if (job) {
@@ -908,7 +917,7 @@ export class UI {
         : job.kind === 'harvest' ? `${f === 'tree' ? 'Chop' : 'Harvest'} ${f && FEATURES[f] ? FEATURES[f].name.toLowerCase() : ''}`.trim()
           : { mine: 'Mine', build: 'Build', floor: 'Lay the floor' }[job.kind];
       add({ mine: '⛏️', harvest: f === 'tree' ? '🪓' : '🌿', build: '🔨', floor: '🧱' }[job.kind], `${label}${n > 1 ? ` together (×${n})` : ''}`, () => {
-        if (!g.orderWork(ids, x, y)) { this.flash('Nobody can get at it', 'warn'); return; }
+        if (!this.act(g, 'orderWork', ids, x, y)) { this.flash('Nobody can get at it', 'warn'); return; }
         this.renderer.cacheVersion = -1;
         this.flash(`${who}: ${label.toLowerCase()}`, 'good');
       }, 'good');
@@ -919,8 +928,8 @@ export class UI {
       const c = g.colonists.find(k => k.id === ids[0]);
       if (bd.keeper !== c.id) add('🧑‍💼', `${c.name.short} keeps the ${BUILDINGS[bd.id].name}`, () => { assignKeeper(g, bd, c.id); this.sigs.insp = null; this.renderInspector(); }, 'good');
     }
-    if (w.walkable(x, y)) add('👣', `Move ${n === 1 ? who : n + ' people'} here`, () => { g.orderMove(ids, x, y); this.flash(`Moving ${n === 1 ? who : n + ' people'}`, 'info'); });
-    else if (!opts.length) add('👣', 'Move as close as they can', () => { g.orderMove(ids, x, y); this.flash(`Moving ${n === 1 ? who : n + ' people'}`, 'info'); });
+    if (w.walkable(x, y)) add('👣', `Move ${n === 1 ? who : n + ' people'} here`, () => { this.act(g, 'orderMove', ids, x, y); this.flash(`Moving ${n === 1 ? who : n + ' people'}`, 'info'); });
+    else if (!opts.length) add('👣', 'Move as close as they can', () => { this.act(g, 'orderMove', ids, x, y); this.flash(`Moving ${n === 1 ? who : n + ' people'}`, 'info'); });
 
     // Plain ground is just a move; anything more gets the menu.
     if (opts.length === 1) { opts[0].run(); return; }
@@ -976,16 +985,16 @@ export class UI {
     if (!w.inside(x, y)) return false;
     const i = w.idx(x, y);
     const b = w.building[i];
-    if (b && !b.done) { g.rush(x, y); this.flash(`Rushing ${BUILDINGS[b.id].name}`, 'good'); return true; }
+    if (b && !b.done) { this.act(g, 'rush', x, y); this.flash(`Rushing ${BUILDINGS[b.id].name}`, 'good'); return true; }
     const f = w.feature[i];
     if (TERRAIN[w.terrain[i]].mineable || (f && FEATURES[f].inRock)) {
-      g.designate(x, y, 'mine'); g.rush(x, y);
+      this.act(g, 'designate', x, y, 'mine'); this.act(g, 'rush', x, y);
       this.renderer.cacheVersion = -1;
       this.flash('Rushing mining', 'good');
       return true;
     }
     if (f && !FEATURES[f].inRock) {
-      g.designate(x, y, 'harvest'); g.rush(x, y);
+      this.act(g, 'designate', x, y, 'harvest'); this.act(g, 'rush', x, y);
       this.renderer.cacheVersion = -1;
       this.flash('Rushing harvest', 'good');
       return true;
@@ -1072,7 +1081,7 @@ export class UI {
     const g = this.game;
     if (!g.canEnterRift) { this.flash('The Rift is open and spewing — parties go in by day.', 'warn'); return; }
     const ids = this.partyIds();
-    const r = g.launchExpedition(null, ids);
+    const r = this.act(g, 'launchExpedition', null, ids);
     if (!r.ok) { this.flash(r.why, 'warn'); return; }
     this.squad.clear(); for (const id of r.ids) this.squad.add(id);
     this.squadChanged();
@@ -1298,10 +1307,28 @@ export class UI {
       const dt = Math.min(0.25, Math.max(0, (now - last) / 1000));
       last = now;
       const g = this.game;
-      if (!this.paused && !g.gameOver) {
+      const co = this.coop;
+      if (co && co.role === 'guest') {
+        // A guest's clock is the host's: step towards the last tick it announced,
+        // quickly when behind, and never past it.
+        const G = co.guest;
+        this.speed = G.speed; this.paused = G.paused;
+        if (G.game === g) {
+          // advance() also runs orders due now, so one given while paused lands at once.
+          const until = now + 12;
+          do G.advance(8); while (G.behind > 0 && !G.waiting && performance.now() < until);
+        }
+        if (!this.paused) this.updateVisitors(dt);
+        this.renderCoopBadge();
+      } else if (!this.paused && !g.gameOver) {
         this.tickAcc += dt * TICKS_PER_SEC * (mult[this.speed] ?? 1);
-        while (this.tickAcc >= 1) { this.tickAcc -= 1; if (this.auto) autoplayStep(g, { build: false }); g.step(); }
+        const host = co && co.role === 'host' ? co.host : null;
+        while (this.tickAcc >= 1) { this.tickAcc -= 1; if (this.auto && !host) autoplayStep(g, { build: false }); g.step(); if (host) host.afterStep(); }
         this.updateVisitors(dt);
+      }
+      if (co && co.role === 'host') {
+        co.host.setClock(this.speed, this.paused || !!g.gameOver);
+        if (now - (co.lastFlush || 0) > 50) { co.lastFlush = now; co.host.flush(); }
       }
       // Autosave with the sunrise; and, if asked, stop the clock when a fight breaks out.
       if (this.slot && this.opts.autosave && !g.gameOver && g.hour >= 6 && this.lastAutoDay !== g.day) {
@@ -1309,7 +1336,7 @@ export class UI {
         this.saveToSlot('auto');
       }
       const fighting = g.maps.some(m => m.field && m.field.units.size);
-      if (fighting && !this.wasFighting && this.opts.pauseOnFight && !this.paused) {
+      if (fighting && !this.wasFighting && this.opts.pauseOnFight && !this.paused && !(co && co.role === 'guest')) {
         this.paused = true; this.flash('A fight has broken out — paused (space to resume)', 'warn'); this.renderTop();
       }
       this.wasFighting = fighting;
@@ -2077,7 +2104,7 @@ export class UI {
       const pick = e.target.closest && e.target.closest('[data-cls-pick]');
       if (en) {
         const [id, k] = en.dataset.clsEnroll.split(':');
-        const r = g.hasSchool(CLASS_INFO[k].school) ? g.enroll(+id, k) : g.readTome(+id, k);
+        const r = g.hasSchool(CLASS_INFO[k].school) ? this.act(g, 'enroll', +id, k) : this.act(g, 'readTome', +id, k);
         if (r) this.toast(r, 'warn'); else this.flash(`Training begins: ${CLASSES[k].name}.`, 'good');
       } else if (op || pick) {
         const id = +(op ? op.dataset.clsOpen : pick.dataset.clsPick);
@@ -2161,7 +2188,7 @@ export class UI {
           `${v ? 5 - v : ''}${pas === 'burning' ? '<span class="fl" title="Burning passion"></span>' : pas === 'minor' ? '<span class="fl minor" title="Interested"></span>' : ''}`);
         cell.style.background = `rgba(255,255,255,${(0.03 + Math.min(20, sk) / 20 * 0.2).toFixed(3)})`;
         cell.title = `${c.name.short} — ${jobName[j] || j}\nSkill ${sk}${pas && pas !== 'none' ? ` (${pas} passion)` : ''}\nPriority: ${v ? 5 - v : 'never'}\nClick: more urgent · right-click: less urgent`;
-        const set = (nv) => { g.setPriority(c.id, j, (nv + 5) % 5); this.sigs.drawer = null; this.renderDrawer(); };
+        const set = (nv) => { this.act(g, 'setPriority', c.id, j, (nv + 5) % 5); this.sigs.drawer = null; this.renderDrawer(); };
         cell.onclick = () => set(v + 1);
         cell.oncontextmenu = (e) => { e.preventDefault(); set(v - 1); };
         td.appendChild(cell);
@@ -2257,7 +2284,7 @@ export class UI {
     for (const v of [4, 3, 2, 1, 0]) {
       const btn = el('button', 'p' + (v ? 5 - v : 0), v ? `${lab(v)}${v === 4 ? ' · first' : v === 1 ? ' · last' : ''}` : 'Never');
       btn.onclick = () => {
-        for (const c of members) g.setPriority(c.id, this.bulkJob, v);
+        for (const c of members) this.act(g, 'setPriority', c.id, this.bulkJob, v);
         this.flash(`${this.bulkJob} set to ${lab(v)} for ${members.length} denizens`, 'good');
         this.sigs.insp = null;
         this.renderInspector();
@@ -2275,12 +2302,12 @@ export class UI {
     const down = el('button', 'act primary', `🌀 Into the Rift (${inCamp.length})`);
     down.disabled = !inCamp.length || !g.canEnterRift;
     down.title = g.canEnterRift ? 'They walk to the gate and step through onto floor 1' : 'Nobody goes in until dawn';
-    down.onclick = () => { const r = g.launchExpedition(null, inCamp.map(c => c.id)); if (r.ok) this.flash(`${r.ids.length} head for the Rift Gate`, 'good'); };
+    down.onclick = () => { const r = this.act(g, 'launchExpedition', null, inCamp.map(c => c.id)); if (r.ok) this.flash(`${r.ids.length} head for the Rift Gate`, 'good'); };
     b.appendChild(down);
     const below = members.filter(c => c.mapId);
     if (below.length) {
       const up = el('button', 'act', `🏕️ Call back (${below.length})`);
-      up.onclick = () => { g.orderTravel(below.map(c => c.id), 'up', true); this.flash(`${below.length} climbing out of the Rift`, 'info'); };
+      up.onclick = () => { this.act(g, 'orderTravel', below.map(c => c.id), 'up', true); this.flash(`${below.length} climbing out of the Rift`, 'info'); };
       b.appendChild(up);
     }
 
@@ -2679,7 +2706,7 @@ export class UI {
       if (here.length) {
         const back = el('button', 'act', 'Call back');
         back.title = 'Everyone on this floor climbs all the way out';
-        back.onclick = () => { g.orderTravel(here.map(c => c.id), 'up', true); this.flash(`${here.length} climbing out of the Rift`, 'info'); };
+        back.onclick = () => { this.act(g, 'orderTravel', here.map(c => c.id), 'up', true); this.flash(`${here.length} climbing out of the Rift`, 'info'); };
         acts.appendChild(back);
       }
       row.appendChild(acts);
@@ -2854,14 +2881,14 @@ export class UI {
       const n = e.target.closest && e.target.closest('[data-tech]'); if (!n) return;
       const t = n.dataset.tech, st = state(t);
       if (st === 'done' || st === 'cur') return;
-      if (st === 'open') { g.setResearch(t); g.unqueueResearch(t); this.flash(`Now researching ${R[t].name}`, 'good'); }
-      else { g.queueResearch(t); this.flash(`Queued ${R[t].name} and its prerequisites`, 'good'); }
+      if (st === 'open') { this.act(g, 'setResearch', t); this.act(g, 'unqueueResearch', t); this.flash(`Now researching ${R[t].name}`, 'good'); }
+      else { this.act(g, 'queueResearch', t); this.flash(`Queued ${R[t].name} and its prerequisites`, 'good'); }
       this.renderDrawer();
     };
     tree.oncontextmenu = (e) => {
       const n = e.target.closest && e.target.closest('[data-tech]'); if (!n) return;
       e.preventDefault();
-      g.unqueueResearch(n.dataset.tech); this.renderDrawer();
+      this.act(g, 'unqueueResearch', n.dataset.tech); this.renderDrawer();
     };
     body.appendChild(tree);
     body.appendChild(el('div', 'rs-legend', `<span class="k-done">✓ Researched</span><span class="k-cur">⏳ Studying</span>
@@ -2905,10 +2932,10 @@ export class UI {
             <div class="mini">🕓 waits ${Math.max(0, Math.round((a.expires - g.tick) / 60))}h more${a.fee ? ` · asks 🪙 ${a.fee}` : ' · asks nothing'}</div></div>`;
         const acts = el('div', 'tr-va');
         const accept = el('button', 'act primary', a.fee ? `Welcome (🪙${a.fee})` : 'Welcome');
-        accept.onclick = (e) => { e.stopPropagation(); g.acceptArrival(i); this.renderDrawer(); };
+        accept.onclick = (e) => { e.stopPropagation(); this.act(g, 'acceptArrival', i); this.renderDrawer(); };
         if (a.fee > gold) accept.disabled = true;
         const rej = el('button', 'act danger', 'Turn away');
-        rej.onclick = (e) => { e.stopPropagation(); g.rejectArrival(i); this.renderDrawer(); };
+        rej.onclick = (e) => { e.stopPropagation(); this.act(g, 'rejectArrival', i); this.renderDrawer(); };
         acts.appendChild(accept); acts.appendChild(rej);
         c.querySelector('.tr-vb').appendChild(acts);
         row.appendChild(c);
@@ -2937,7 +2964,7 @@ export class UI {
         t.dataset.tip = 'res:' + res;
         t.innerHTML = `<div class="tr-ic">${RESOURCE_ICON[res] || '📦'}</div><div class="tr-n">${RESOURCES[res].name}</div>
           <div class="tr-q">${qty} in stock</div><div class="tr-p">10 for 🪙${price}</div>`;
-        t.onclick = () => { if (!can) return; g.buy(res, 10); this.flash(`Bought 10 ${RESOURCES[res].name} for ${price}g`, 'good'); this.renderDrawer(); };
+        t.onclick = () => { if (!can) return; this.act(g, 'buy', res, 10); this.flash(`Bought 10 ${RESOURCES[res].name} for ${price}g`, 'good'); this.renderDrawer(); };
         tg.appendChild(t);
       }
       if (cv.livestock && cv.livestock.count > 0) {
@@ -2948,7 +2975,7 @@ export class UI {
         t.dataset.tip = 'species:' + L.species;
         t.innerHTML = `<div class="tr-ic">${ANIMAL_ICON[L.species] || '🐾'}</div><div class="tr-n">${A.name}</div>
           <div class="tr-q">${L.count} head</div><div class="tr-p">1 for 🪙${price}</div>`;
-        t.onclick = () => { if (!can) return; g.buyLivestock(1); this.flash(`Bought a ${A.name}`, 'good'); this.renderDrawer(); };
+        t.onclick = () => { if (!can) return; this.act(g, 'buyLivestock', 1); this.flash(`Bought a ${A.name}`, 'good'); this.renderDrawer(); };
         tg.appendChild(t);
       }
       theirs.appendChild(tg);
@@ -2964,7 +2991,7 @@ export class UI {
         t.dataset.tip = 'res:' + res;
         t.innerHTML = `${wanted ? '<div class="tr-star">⭐</div>' : ''}<div class="tr-ic">${RESOURCE_ICON[res] || '📦'}</div>
           <div class="tr-n">${RESOURCES[res].name}</div><div class="tr-q">you have ${have}</div><div class="tr-p">10 for +🪙${val}</div>`;
-        t.onclick = () => { if (!can) return; g.sell(res, 10); this.flash(`Sold 10 ${RESOURCES[res].name} for ${val}g`, 'good'); this.renderDrawer(); };
+        t.onclick = () => { if (!can) return; this.act(g, 'sell', res, 10); this.flash(`Sold 10 ${RESOURCES[res].name} for ${val}g`, 'good'); this.renderDrawer(); };
         og.appendChild(t);
       }
       ours.appendChild(og);
@@ -3495,10 +3522,10 @@ export class UI {
     const en = e.target.closest('[data-enroll]'), cn = e.target.closest('[data-cancel]');
     if (!en && !cn) return false;
     const g = this.game;
-    if (cn) g.cancelTraining(c.id);
+    if (cn) this.act(g, 'cancelTraining', c.id);
     else {
       const k = en.dataset.enroll;
-      const r = g.hasSchool(CLASS_INFO[k].school) ? g.enroll(c.id, k) : g.readTome(c.id, k);
+      const r = g.hasSchool(CLASS_INFO[k].school) ? this.act(g, 'enroll', c.id, k) : this.act(g, 'readTome', c.id, k);
       if (r) this.toast(r, 'warn');
     }
     this.sigs.insp = null; this.renderInspector();
@@ -3553,12 +3580,12 @@ export class UI {
     this.magicClick = (e) => {
       const buy = e.target.closest('[data-buy]'), cp = e.target.closest('[data-copy]'), sl = e.target.closest('[data-sell]'), pt = e.target.closest('[data-part]'), wr = e.target.closest('[data-write]');
       let r = null;
-      if (buy) { const [from, kind, id] = buy.dataset.buy.split('|'); r = g.buyMagic(from, kind, id); }
-      else if (cp) r = g.copyBook(cp.dataset.copy);
-      else if (sl) r = g.sellBook(sl.dataset.sell);
+      if (buy) { const [from, kind, id] = buy.dataset.buy.split('|'); r = this.act(g, 'buyMagic', from, kind, id); }
+      else if (cp) r = this.act(g, 'copyBook', cp.dataset.copy);
+      else if (sl) r = this.act(g, 'sellBook', sl.dataset.sell);
       else if (pt) {
         const [kind, id] = pt.dataset.part.split('|');
-        if (!g.spellParts[kind].includes(id)) r = g.researchPart(kind, id);
+        if (!g.spellParts[kind].includes(id)) r = this.act(g, 'researchPart', kind, id);
         else {
           const d = this.spellDraft;
           if (kind === 'forms') d.form = id; else if (kind === 'elements') d.element = id;
@@ -3567,7 +3594,7 @@ export class UI {
       } else if (wr) {
         const d = this.spellDraft;
         const name = `${SPELL_ELEMENTS[d.element].name} ${SPELL_FORMS[d.form].name}${d.mods.length ? ' of ' + d.mods.map(m => SPELL_MODS[m].name).join(' ') : ''}`;
-        r = g.designSpell(name, d.form, d.element, d.mods);
+        r = this.act(g, 'designSpell', name, d.form, d.element, d.mods);
       } else return false;
       if (r) this.toast(r, 'warn');
       this.sigs.drawer = null; this.renderDrawer();
@@ -3632,9 +3659,9 @@ export class UI {
       const f = e.target.closest('[data-forge]'), l = e.target.closest('[data-legend]'), br = e.target.closest('[data-brew]'), ft = e.target.closest('[data-ftier]');
       let r = null;
       if (ft) { const [tid, sl] = ft.dataset.ftier.split(':'); r = forgeTier(g, sl, tid, this.forgeFor); }
-      else if (f) r = g.forge(f.dataset.forge);
-      else if (l) r = g.craftLegendary(l.dataset.legend);
-      else if (br) r = g.brew(br.dataset.brew);
+      else if (f) r = this.act(g, 'forge', f.dataset.forge);
+      else if (l) r = this.act(g, 'craftLegendary', l.dataset.legend);
+      else if (br) r = this.act(g, 'brew', br.dataset.brew);
       else return;
       if (r) this.toast(r, 'warn');
       this.sigs.drawer = null; this.renderDrawer();
@@ -3679,7 +3706,7 @@ export class UI {
       c.belt = nb.filter(Boolean);
       this.sigs.insp = null; this.renderInspector();
     });
-    b.querySelectorAll('[data-unequip]').forEach(d => d.onclick = () => { g.unequip(c.id, d.dataset.unequip); this.sigs.insp = null; this.renderInspector(); });
+    b.querySelectorAll('[data-unequip]').forEach(d => d.onclick = () => { this.act(g, 'unequip', c.id, d.dataset.unequip); this.sigs.insp = null; this.renderInspector(); });
     const box = b.querySelector('#armory');
     if (!g.armory.length) box.appendChild(el('div', 'mini', 'Empty. Loot comes back from delves and raids; a smithy forges more.'));
     // Best first: what would help this character most.
@@ -3693,13 +3720,13 @@ export class UI {
       row.innerHTML = `<span class="k">${SLOT_ICONS[sl]} <b style="color:${R.color}">${esc(it.name)}</b>${!why ? ` <span class="mini" style="color:${gain > 0 ? 'var(--good)' : 'var(--dim2)'}">${gain > 0 ? '▲' : '▼'}${Math.abs(Math.round(gain))}</span>` : ''}</span>`;
       const btn = el('button', 'act', why ? 'Can’t' : 'Equip');
       if (why) { btn.disabled = true; btn.dataset.tipt = why; }
-      btn.onclick = () => { const r = g.equip(c.id, i); if (r) this.toast(r, 'warn'); this.sigs.insp = null; this.renderInspector(); };
+      btn.onclick = () => { const r = this.act(g, 'equip', c.id, i); if (r) this.toast(r, 'warn'); this.sigs.insp = null; this.renderInspector(); };
       row.appendChild(btn);
       box.appendChild(row);
     }
     if ((g.resources.gear || 0) > 0) {
       const up = el('button', 'act primary', `Reinforce a piece (1 gear kit, ${Math.floor(g.resources.gear)} left)`);
-      up.onclick = () => { g.upgradeGear(c.id); this.sigs.insp = null; this.renderInspector(); };
+      up.onclick = () => { this.act(g, 'upgradeGear', c.id); this.sigs.insp = null; this.renderInspector(); };
       b.appendChild(up);
     }
   }
@@ -3775,8 +3802,8 @@ export class UI {
       const nb = e.target.closest('[data-node]'), lo = e.target.closest('[data-lo]'), tac = e.target.closest('[data-tac]'), rs = e.target.closest('[data-respec]');
       const ps = e.target.closest('[data-prestige]'), ln = e.target.closest('[data-learn]');
       if (this.classChangeClick(e, c)) return;
-      if (ps) { const r = this.game.choosePrestige(c.id, ps.dataset.prestige); if (r) { this.toast(r, 'warn'); return; } }
-      else if (ln) { const r = this.game.learnBook(c.id, ln.dataset.learn); if (r) { this.toast(r, 'warn'); return; } }
+      if (ps) { const r = this.act(this.game, 'choosePrestige', c.id, ps.dataset.prestige); if (r) { this.toast(r, 'warn'); return; } }
+      else if (ln) { const r = this.act(this.game, 'learnBook', c.id, ln.dataset.learn); if (r) { this.toast(r, 'warn'); return; } }
       else if (tac) { c.tactics = tac.dataset.tac; }
       else if (lo) { toggleLoadout(c, lo.dataset.lo); }
       else if (rs) {
@@ -3906,7 +3933,7 @@ export class UI {
         const btn = el('button', 'act' + (bd.crop === id ? ' primary' : ''), `${CROP_ICON[id] || '🌱'} ${CROPS[id].name} ${v > 0 ? pct(v) : '—'}`);
         btn.dataset.tip = 'crop:' + id;
         btn.disabled = v <= 0;
-        btn.onclick = () => { g.setCrop(x, y, id); bd.autoCrop = false; this.renderInspector(); };
+        btn.onclick = () => { this.act(g, 'setCrop', x, y, id); bd.autoCrop = false; this.renderInspector(); };
         picker.appendChild(btn);
       }
       box.appendChild(el('div', 'sect', 'Plant'));
@@ -3944,9 +3971,9 @@ export class UI {
         () => this.openDrawer(BUILDINGS[bd.id].shop && !['trading_post', 'counting_house'].includes(BUILDINGS[bd.id].shop) ? 'trade' : 'services'));
     }
     if (bd && bd.done && bd.id === 'smithy') add('⚒️ Forge', () => this.openDrawer('workshop'));
-    if (terr.mineable || (f && FEATURES[f].inRock)) add('⛏️ Mine here', () => g.designate(x, y, 'mine'));
-    if (f && !FEATURES[f].inRock) add('🌿 Harvest', () => g.designate(x, y, 'harvest'));
-    if (w.designation[i] || (bd && !bd.done) || (fl && !fl.done)) add('🚫 Cancel', () => g.designate(x, y, 'cancel'), 'danger');
+    if (terr.mineable || (f && FEATURES[f].inRock)) add('⛏️ Mine here', () => this.act(g, 'designate', x, y, 'mine'));
+    if (f && !FEATURES[f].inRock) add('🌿 Harvest', () => this.act(g, 'designate', x, y, 'harvest'));
+    if (w.designation[i] || (bd && !bd.done) || (fl && !fl.done)) add('🚫 Cancel', () => this.act(g, 'designate', x, y, 'cancel'), 'danger');
     if (!box.childElementCount) box.appendChild(el('div', 'mini', 'Nothing to order here.'));
   }
 
@@ -4006,7 +4033,7 @@ export class UI {
       else if (t.dataset.reforge) { const [cid, sl] = t.dataset.reforge.split(':'); res = merchantReforge(v, r, +cid, sl); }
       else if (t.dataset.rob != null) {
         robMerchant(v, r);
-        g.orderAttack(here.map(c => c.id), r.id);
+        this.act(g, 'orderAttack', here.map(c => c.id), r.id);
         b.onclick = null; this.sigs.insp = null; this.renderInspector();
         return;
       }
@@ -4076,7 +4103,7 @@ export class UI {
         const sel = document.createElement('select');
         sel.innerHTML = `<option value="">Nobody — stays at the pasture</option>`
           + g.colonists.filter(c => !c.dead).map(c => `<option value="${c.id}"${b.handler === c.id ? ' selected' : ''}>${esc(c.name.short)} · ${esc(c.title || CLASSES[c.klass].name)}</option>`).join('');
-        sel.onchange = () => { g.setHandler(b.id, sel.value ? +sel.value : null); this.sigs.insp = null; this.renderInspector(); };
+        sel.onchange = () => { this.act(g, 'setHandler', b.id, sel.value ? +sel.value : null); this.sigs.insp = null; this.renderInspector(); };
         row.appendChild(sel);
         box.appendChild(row);
         box.appendChild(el('div', 'mini', A.war
@@ -4084,7 +4111,7 @@ export class UI {
           : `Follows its handler into the Rift and carries ${A.pack * PACK_PER_LOAD} more for them. Tip: select someone and right-click the beast.`));
       }
       const bt = el('button', 'act danger', b.markedButcher ? 'Cancel slaughter' : '🔪 Slaughter');
-      bt.onclick = () => { g.markButcher(b.id); this.sigs.insp = null; this.renderInspector(); };
+      bt.onclick = () => { this.act(g, 'markButcher', b.id); this.sigs.insp = null; this.renderInspector(); };
       box.appendChild(bt);
     } else {
       box.appendChild(el('div', 'mini', g.world.findBuildings('pasture').length
@@ -4293,6 +4320,166 @@ export class UI {
     g.appendChild(b);
   }
 
+  // ------------------------------------------------------------ co-op --
+  /**
+   * Every order a player gives goes through here. Solo it is a plain call. The
+   * co-op host runs it now and stamps it into the command stream; a guest sends
+   * it to the host and gets back a stand-in answer, because the real one comes
+   * with the tick the host runs it on (and a refusal comes back as a toast).
+   */
+  act(target, op, ...args) {
+    const c = this.coop;
+    if (!c) return target[op](...args);
+    const mapId = target && target._m ? target._m.id : 0;
+    if (c.role === 'host') return c.host.issue(0, op, mapId, args);
+    if (!c.guest.issue(op, mapId, args)) { this.flash('Still syncing with the host…', 'warn'); return null; }
+    if (op === 'launchExpedition') return { ok: true, ids: args[1] || [] };
+    if (op === 'orderRescue' || op === 'orderTame') return this.game.colonists.find(k => (args[0] || []).includes(k.id)) || null;
+    const p = COOP_OPS[op];
+    return p && typeof p === 'object' ? { ...p } : p;
+  }
+
+  /** A guest touching the clock: the host's clock rules, so ask instead. True means "stop here". */
+  guestTime(what) {
+    const c = this.coop;
+    if (!c || c.role !== 'guest') return false;
+    c.net.send({ t: 'ask', what });
+    this.flash(`The host controls time. Asked them to ${what}.`, 'info');
+    return true;
+  }
+
+  /** Open this colony to friends: a 4-digit code they type into Join World. */
+  async openCoop() {
+    if (this.coop || this.coopBusy) return;
+    if (this.game.gameOver) { this.flash('This colony has fallen.', 'warn'); return; }
+    this.coopBusy = true;
+    this.flash('Opening the world to co-op…', 'info');
+    try {
+      let host = null;
+      const net = await netHost({
+        makeCode: () => coopNewCode(),
+        onMessage: (peer, msg) => host && host.receive(peer, msg),
+        onJoin: () => {},
+        onLeave: (peer) => host && host.drop(peer),
+        onError: (why) => this.flash('Co-op: ' + why, 'warn'),
+      });
+      host = new CoopHost(this.game, {
+        code: net.code, name: 'Host', send: (peer, msg) => net.send(peer, msg),
+        onEvent: (e) => this.coopEvent(e),
+      });
+      // The steward's orders don't go through the command stream.
+      this.auto = false;
+      this.coop = { role: 'host', host, net, code: net.code };
+      this.flash(`Co-op open — code ${net.code}`, 'good');
+    } catch (e) {
+      this.flash('Could not open co-op: ' + (e && e.message ? e.message : e), 'warn');
+    } finally {
+      this.coopBusy = false;
+      this.renderCoopBadge();
+      if (!$('#gamemenu').classList.contains('hidden')) this.showGameMenu(true);
+    }
+  }
+
+  /** Join a friend's world by its code. `status(text, kind)` reports progress to the title screen. */
+  async joinCoop(code, status = () => {}) {
+    if (this.coop || this.coopBusy) return;
+    if (!/^\d{4}$/.test(code)) { status('A world code is four digits.', 'warn'); return; }
+    this.coopBusy = true;
+    status(`Looking for world ${code}…`, 'info');
+    let guest = null, net = null, done = false;
+    const fail = (why) => {
+      if (done) return; done = true;
+      status(why, 'warn');
+      if (net) net.close();
+      if (this.coop && this.coop.guest === guest) { this.coop = null; this.renderCoopBadge(); }
+    };
+    try {
+      net = await netJoin(code, {
+        onMessage: (msg) => guest && guest.receive(msg),
+        onClose: () => {
+          if (!done) { fail('The host closed the connection.'); return; }
+          if (this.coop && this.coop.guest === guest) this.leaveCoop('The host closed the world.');
+        },
+        onError: (why) => this.flash('Co-op: ' + why, 'warn'),
+      });
+      guest = new CoopGuest({
+        send: (msg) => net.send(msg),
+        load: (text) => coopLoad(text),
+        onEvent: (e) => {
+          if (e.kind === 'loaded') {
+            const first = !this.coop || this.coop.guest !== guest || !this.coop.live;
+            if (first) {
+              done = true;
+              this.slot = null; this.auto = false;
+              this.colonyName = `Co-op world ${code}`;
+              this.coop = { role: 'guest', guest, net, code, live: true };
+              this.installGame(e.game);
+              this.hideTitle();
+              this.flash(`Joined world ${code} as player ${guest.player + 1}`, 'good');
+            } else {
+              // A resync: keep the camera where it was.
+              const r = this.renderer;
+              this.installGame(e.game, { mapId: this.mapId, cams: { ...this.cams, [this.mapId]: { x: r.camX, y: r.camY, tile: r.tile } } });
+              this.flash('Back in step with the host.', 'good');
+            }
+            this.renderCoopBadge();
+          } else if (e.kind === 'refused') fail(e.why);
+          else if (e.kind === 'result') this.flash(e.msg, 'warn');
+          else if (e.kind === 'desync') { this.flash('Out of step with the host — fetching their world…', 'warn'); this.renderCoopBadge(); }
+        },
+      });
+      this.coop = { role: 'guest', guest, net, code, live: false };
+      guest.hello('Player');
+      setTimeout(() => { if (!done) fail('The host did not answer. Check the code and try again.'); }, 20000);
+    } catch (e) {
+      fail(e && e.message ? e.message : String(e));
+    } finally {
+      this.coopBusy = false;
+    }
+  }
+
+  /** Host: close the world. Guest: leave it, back to the title. */
+  leaveCoop(why) {
+    const c = this.coop;
+    if (!c) return;
+    this.coop = null;
+    try { c.net.close(); } catch (e) { /* already gone */ }
+    this.renderCoopBadge();
+    if (c.role === 'guest') {
+      this.flash(why || 'Left the co-op world.', why ? 'warn' : 'info');
+      this.showTitle();
+    } else this.flash(why || 'Co-op closed. The colony is yours alone again.', 'info');
+  }
+
+  coopEvent(e) {
+    const who = e.player ? `${e.player.name} ${e.player.id + 1}` : 'A player';
+    if (e.kind === 'join') this.flash(`${who} joined the world`, 'good');
+    else if (e.kind === 'leave') this.flash(`${who} left the world`, 'info');
+    else if (e.kind === 'resync') this.flash(`${who} drifted out of step and was resynced (${e.reason})`, 'warn');
+    else if (e.kind === 'ask') this.flash(`${who} asks you to ${e.what}`, 'info');
+    this.renderCoopBadge();
+  }
+
+  /** The chip in the corner: the code, who's in, and (for a guest) whether we're in step. */
+  renderCoopBadge() {
+    const b = typeof document !== 'undefined' && $('#coopbadge');
+    if (!b) return;
+    const c = this.coop;
+    if (!c || (c.role === 'guest' && !c.live)) { b.classList.add('hidden'); this.coopBadgeSig = null; return; }
+    let n, state = '';
+    if (c.role === 'host') n = c.host.players.length;
+    else {
+      const G = c.guest;
+      n = G.players.length || 2;
+      state = G.waiting ? ' · <em class="warn">resyncing…</em>' : G.behind > 30 ? ` · <em>catching up ${G.behind}</em>` : ' · <em class="good">in step</em>';
+    }
+    const sig = `${c.code}|${n}|${state}`;
+    if (sig === this.coopBadgeSig) return;
+    this.coopBadgeSig = sig;
+    b.classList.remove('hidden');
+    b.innerHTML = `🤝 <b>${c.code}</b> · ${n} player${n === 1 ? '' : 's'}${c.role === 'guest' ? ' · guest' : ''}${state}`;
+  }
+
   // ---------------------------------------------------------- saving --
   /** The UI bits worth keeping with a save: which map was on screen, the cameras, the party. */
   uiSnapshot() {
@@ -4321,6 +4508,8 @@ export class UI {
 
   /** Swap a game in: a loaded one, or a fresh one. Resets everything the old run left on screen. */
   installGame(game, ui = {}) {
+    // Another colony replacing the hosted one closes the world first.
+    if (this.coop && this.coop.role === 'host' && this.coop.host.game !== game) this.leaveCoop();
     this.game = game;
     this.seed = game.seedString;
     const r = this.renderer;
@@ -4369,6 +4558,8 @@ export class UI {
    * idling behind it, paused, so the game is the backdrop.
    */
   showTitle() {
+    // Back at the title, a hosted world closes and a guest leaves.
+    if (this.coop && (this.coop.role === 'host' || this.coop.live)) this.leaveCoop();
     this.paused = true;
     this.hideGameMenu(); this.hide('#options'); this.hide('#modal');
     const box = $('#title');
@@ -4394,7 +4585,12 @@ export class UI {
           <div class="ts-acts"><button class="act primary" data-act="new">New colony</button></div>
         </div>`);
     }
-    box.innerHTML = `<div class="ts-wrap">
+    box.innerHTML = `<div class="ts-join">
+        <label for="ts-code">Join World</label>
+        <div class="ts-join-row"><input id="ts-code" maxlength="4" inputmode="numeric" autocomplete="off" placeholder="0000" aria-label="4-digit world code"><button class="act primary" data-act="join">Join</button></div>
+        <div class="ts-join-msg mini"></div>
+      </div>
+      <div class="ts-wrap">
         <div class="ts-logo">RIFT GATE</div>
         <div class="ts-tag">SSS Class Dungeon Colony Sim</div>
         <div class="ts-slots">${slots.join('')}</div>
@@ -4405,6 +4601,7 @@ export class UI {
       const b = e.target.closest && e.target.closest('button'); if (!b) return;
       const act = b.dataset.act;
       if (act === 'options') { this.showOptions(); return; }
+      if (act === 'join') { this.titleJoin(); return; }
       const n = +b.closest('[data-slot]').dataset.slot;
       if (act === 'load') { if (await this.loadFromSlot(n)) this.hideTitle(); }
       else if (act === 'new') this.showNewColony(n);
@@ -4413,6 +4610,19 @@ export class UI {
         else { b.dataset.armed = '1'; b.textContent = 'Delete?'; b.classList.add('danger'); }
       }
     };
+    const code = $('#ts-code');
+    if (code) {
+      code.oninput = () => { code.value = code.value.replace(/\D/g, '').slice(0, 4); };
+      code.onkeydown = (e) => { if (e.key === 'Enter') this.titleJoin(); };
+    }
+  }
+
+  /** The Join World box on the title screen. */
+  titleJoin() {
+    const inp = $('#ts-code'), msg = $('#title .ts-join-msg');
+    const code = (inp && inp.value || '').trim();
+    const status = (text, kind) => { if (msg) { msg.textContent = text; msg.className = 'ts-join-msg mini ' + (kind || ''); } };
+    this.joinCoop(code, status);
   }
 
   hideTitle() {
@@ -4490,15 +4700,23 @@ export class UI {
   }
 
   // -------------------------------------------------------- game menu --
-  showGameMenu() {
+  showGameMenu(refresh = false) {
     const box = $('#gamemenu');
-    this.menuWasPaused = this.paused;
-    this.paused = true;
+    // In co-op the clock is everyone's, so the menu doesn't stop it.
+    if (!refresh && !this.coop) { this.menuWasPaused = this.paused; this.paused = true; }
     this.renderTop();
     box.classList.remove('hidden');
+    const c = this.coop;
+    const coopHtml = !c ? `<button class="act" data-act="coop"${this.coopBusy ? ' disabled' : ''} data-tipt="Let up to 3 friends into this colony. They type the 4-digit code into Join World on their title screen.">🤝 ${this.coopBusy ? 'Opening…' : 'Open to Co-op'}</button>`
+      : c.role === 'host' ? `<div class="gm-coop"><div class="mini">Co-op is open. Friends join with</div><div class="gm-code">${c.code}</div>
+          <div class="mini">${c.host.players.length} of 4 players · ${c.host.guests.map(p => esc(p.name) + ' ' + (p.id + 1)).join(', ') || 'waiting for friends'}</div></div>
+          <button class="act" data-act="coopclose">Close co-op</button>`
+      : `<div class="gm-coop"><div class="mini">You are a guest in world</div><div class="gm-code">${c.code}</div></div>
+          <button class="act" data-act="coopleave">Leave world</button>`;
     box.innerHTML = `<div class="gm-card">
-        <div class="gm-h">Paused</div>
+        <div class="gm-h">${this.coop ? 'Menu' : 'Paused'}</div>
         <button class="act primary" data-act="resume">Resume</button>
+        ${coopHtml}
         <button class="act" data-act="save"${this.slot ? '' : ' disabled title="This run has no save slot (it was started from a ?seed= link)"'}>💾 Save now${this.slot ? ` (slot ${this.slot})` : ''}</button>
         <button class="act" data-act="options">🛠️ Options</button>
         <button class="act" data-act="help">❓ Controls</button>
@@ -4513,6 +4731,9 @@ export class UI {
       else if (act === 'options') this.showOptions();
       else if (act === 'help') { this.hideGameMenu(); this.toggleHelp(); }
       else if (act === 'quit') { await this.saveToSlot('auto'); this.hideGameMenu(); this.showTitle(); }
+      else if (act === 'coop') { this.openCoop(); this.showGameMenu(true); }
+      else if (act === 'coopclose') { this.leaveCoop(); this.showGameMenu(true); }
+      else if (act === 'coopleave') { this.hideGameMenu(); this.leaveCoop(); }
     };
   }
 
@@ -4520,7 +4741,7 @@ export class UI {
     const box = $('#gamemenu');
     if (!box || box.classList.contains('hidden')) return;
     box.classList.add('hidden');
-    this.paused = !!this.menuWasPaused;
+    if (!this.coop) this.paused = !!this.menuWasPaused;
     this.renderTop();
   }
 }

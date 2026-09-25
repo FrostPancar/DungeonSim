@@ -25,7 +25,7 @@ import { livePotions, packPotions } from './realtime.js';
 export const SAVE_VERSION = 1;
 const SAVE_CLASSES = { Game, World, Overworld, RNG };
 // Derived or transient: rebuilt after loading rather than stored.
-const SKIP_KEYS = new Set(['view', 'occ', 'fxAct', 'fxSt', 'fxCharging', '_bc', '_bcAll', '_open', 'spatial', 'aoeFocus']);
+const SKIP_KEYS = new Set(['view', 'occ', '_bcBuilt', 'fxAct', 'fxSt', 'fxCharging', '_bc', '_bcAll', '_open', 'spatial', 'aoeFocus']);
 const TYPED = { Uint8Array, Int32Array, Float32Array, Uint16Array, Int16Array, Float64Array, Uint32Array, Int8Array };
 
 function classOf(o) {

@@ -136,10 +136,28 @@ In People › Duties, 1 is done first and 4 last; click a cell to make it more
 urgent, right-click for less. Clicking an alert selects the colonists it is
 about or opens the tab that fixes it.
 
+## Co-op
+
+Up to four players can run one colony together.
+
+- **Host:** open the menu (☰) and choose **🤝 Open to Co-op**. The menu shows a 4-digit code.
+- **Join:** on the title screen, type the code into **Join World** (top right) and press Join.
+  You get the host's colony as it is now, and you play it alongside them.
+
+Everyone can build, designate and give orders. The host controls speed and pause; a guest who
+presses them sends the host a request instead. The chip at the top of the screen shows the code,
+who's in, and whether a guest is in step with the host. If a guest drifts out of step, it notices
+within an in-game hour and reloads the host's colony automatically.
+
+Players meet through PeerJS's public service and then connect browser-to-browser, so both need
+to be online. Both must also be on the same build of the game. Shop, merchant and skill-tree
+actions aren't synced for guests yet: they're undone at the next check. The design, what's built
+and what's left are in [`docs/coop-plan.md`](docs/coop-plan.md).
+
 ## Development
 
 ```bash
-node test/harness.mjs          # full suite (557 assertions)
+node test/harness.mjs          # full suite (638 assertions)
 node test/harness.mjs --bench  # + 120-day stability run
 node build.mjs                 # rebuild riftgate.html from src/
 ```

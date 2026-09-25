@@ -6,6 +6,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { createHash } from 'node:crypto';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const OUT = join(root, 'riftgate.html');
@@ -15,7 +16,7 @@ const OUT = join(root, 'riftgate.html');
 const MODULES = [
   'rng', 'occupancy', 'icons', 'chart', 'data', 'elements', 'prestige', 'classes', 'items', 'names', 'overworld', 'npc', 'farming', 'husbandry', 'monsters', 'biomes', 'magic', 'combat', 'sprites', 'iconsheet', 'pixicons',
   'world', 'colony', 'social', 'dungeon', 'expedition', 'realtime', 'events', 'economy', 'floors',
-  'game', 'autoplay', 'save', 'render', 'keywords', 'tutorial', 'tips', 'ui',
+  'game', 'autoplay', 'save', 'coop', 'net', 'render', 'keywords', 'tutorial', 'tips', 'ui',
 ];
 
 function strip(src, name) {
@@ -60,6 +61,14 @@ for (const name of MODULES) {
   }
   parts.push(`\n/* ===== src/${name}.js ===== */\n${code.trim()}\n`);
 }
+
+// Stamp the co-op build id: a hash of the code, so two players on different
+// builds (a stale cache, two hosts serving different commits) refuse each other
+// at the door instead of drifting apart mid-game.
+const buildId = createHash('sha1').update(parts.join('')).digest('hex').slice(0, 10);
+const stampAt = parts.findIndex(p => p.includes("const COOP_BUILD = 'dev';"));
+if (stampAt < 0) { console.error('Could not find COOP_BUILD in coop.js to stamp'); process.exit(1); }
+parts[stampAt] = parts[stampAt].replace("const COOP_BUILD = 'dev';", `const COOP_BUILD = '${buildId}';`);
 
 const css = readFileSync(join(root, 'style.css'), 'utf8');
 const shell = readFileSync(join(root, 'index.html'), 'utf8');
@@ -107,4 +116,4 @@ try {
 
 writeFileSync(OUT, bundle);
 const kb = (Buffer.byteLength(bundle) / 1024).toFixed(0);
-console.log(`\x1b[32m✓\x1b[0m built ${OUT}  (${kb} KB, ${MODULES.length} modules, ${seen.size} top-level symbols)`);
+console.log(`\x1b[32m✓\x1b[0m built ${OUT}  (${kb} KB, ${MODULES.length} modules, ${seen.size} top-level symbols, build ${buildId})`);

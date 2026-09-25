@@ -1234,6 +1234,29 @@ button,.card,.pick,.gz,.mt,.cb,.al{-webkit-tap-highlight-color:transparent}
 .gm-h{font-family:Georgia,"Iowan Old Style",Palatino,serif;font-size:22px;letter-spacing:.1em;color:#f3e6c4;text-align:center;margin-bottom:4px}
 .gm-card .act{justify-content:center}
 
+/* --- co-op: Join World on the title, the code in the menu, the chip in play --- */
+.ts-join{position:absolute;top:16px;right:16px;z-index:1;display:flex;flex-direction:column;gap:5px;width:220px;padding:10px 12px;text-align:left;
+  background:var(--win);border:1px solid var(--rule);border-radius:var(--r3);box-shadow:var(--shadow)}
+.ts-join label{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim)}
+.ts-join-row{display:flex;gap:6px}
+.ts-join input{flex:1;min-width:0;font:700 18px ui-monospace,Menlo,monospace;letter-spacing:.35em;text-align:center;color:var(--ink);
+  background:var(--s1);border:1px solid var(--rule);border-radius:var(--r1);padding:6px 8px}
+.ts-join input:focus{outline:none;border-color:var(--hi-line)}
+.ts-join-msg{min-height:0;color:var(--dim)}
+.ts-join-msg:empty{display:none}
+.ts-join-msg.warn{color:var(--warn)}
+.ts-join-msg.good{color:var(--good)}
+@media (max-width:760px){#title{flex-direction:column}.ts-join{position:static;width:100%;margin:0 0 12px}}
+.gm-coop{display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px;border:1px dashed var(--hi-line);border-radius:var(--r2);background:var(--s1);text-align:center}
+.gm-code{font:700 34px ui-monospace,Menlo,monospace;letter-spacing:.3em;color:#f3e6c4;user-select:all}
+#coopbadge{position:absolute;top:6px;left:50%;transform:translateX(-50%);z-index:22;padding:4px 10px;font-size:12px;color:var(--ink);white-space:nowrap;
+  background:rgba(12,14,17,.9);border:1px solid var(--hi-line);border-radius:999px;cursor:var(--cur-hand)}
+#coopbadge.hidden{display:none}
+#coopbadge b{font-family:ui-monospace,Menlo,monospace;letter-spacing:.15em;color:#f3e6c4}
+#coopbadge em{font-style:normal;color:var(--dim)}
+#coopbadge em.good{color:var(--good)}
+#coopbadge em.warn{color:var(--warn)}
+
 /* --- the fight log: blow by blow, under the resource panel --- */
 #fightlog{position:absolute;left:6px;top:calc(var(--res-h, 350px) + 12px);z-index:18;width:min(300px,calc(100vw - 12px));
   padding:7px 9px;background:rgba(12,14,17,.82);border:1px solid rgba(255,255,255,.07);border-left:3px solid var(--danger);
