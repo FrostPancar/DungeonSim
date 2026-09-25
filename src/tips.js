@@ -430,6 +430,18 @@ function tipRift(g) {
 }
 
 // --- research, world, delves ------------------------------------------------
+// Techs that open a school say which classes it teaches: the tech tree shows
+// it short on the node, the hover card in full.
+const SCHOOL_OUTCOME = { combat_school: 'Combat classes', mage_school: 'Mage classes', temple: 'Divine classes',
+  knight_academy: 'Combat prestige', wizardry_academy: 'Mage prestige', cathedral: 'Divine prestige' };
+export function techOutcome(id, short = false) {
+  const R = RESEARCH[id];
+  const hit = R && R.unlock.find(b => SCHOOL_OUTCOME[b]);
+  if (!hit) return '';
+  const full = SCHOOL_OUTCOME[hit];
+  return short ? full.replace(' classes', '').replace(' prestige', ' ★') : full;
+}
+
 function tipTech(g, id) {
   const T = RESEARCH[id];
   if (!T) return '';
@@ -442,6 +454,7 @@ function tipTech(g, id) {
   let html = tHead(TECH_ICON[id] || '🔬', T.name, `${state} · ${T.cost} insight`);
   html += tDesc(tEsc(T.desc));
   if (cur) html += tBar('Progress', g.research.progress / T.cost, '#3987e5', `${Math.round(g.research.progress)} / ${T.cost}`);
+  if (techOutcome(id)) html += `<div class="tt-l"><em>Teaches</em> 🎓 ${techOutcome(id)}</div>`;
   if (T.unlock && T.unlock.length) html += `<div class="tt-l"><em>Unlocks</em> ${T.unlock.map(u => `${BUILDING_ICON[u] || ''} ${BUILDINGS[u] ? BUILDINGS[u].name : u}`).join(' · ')}</div>`;
   if (T.bonus) {
     const nice = { farmYield: 'Crop yield', herbYield: 'Herb yield', healRate: 'Healing', researchRate: 'Research speed', mineYield: 'Mining yield', combat: 'Combat', defence: 'Defence', loot: 'Loot', depth: 'Delve depth', husbandry: 'Husbandry', tame: 'Taming', scout: 'Scouting', haul: 'Hauling', storage: 'Storage' };

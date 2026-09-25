@@ -41,7 +41,7 @@ import {
   taskIcon, STATUS, levelStatus, moodStatus, TECH_ICON,
 } from './icons.js';
 import { meter, spark, stack, legendRow, gauge, statTile, bars, heatStrip, seqStep } from './chart.js';
-import { tipHtml, mapTipKey, foodDaysOf, itemTipKey } from './tips.js';
+import { tipHtml, mapTipKey, foodDaysOf, itemTipKey, techOutcome } from './tips.js';
 import { saveState, loadState, saveSummary } from './save.js';
 import { installPixIcons } from './pixicons.js';
 import { CoopHost, CoopGuest, coopLoad, coopNewCode, COOP_OPS } from './coop.js';
@@ -128,13 +128,6 @@ const hasAllOf = (g, cost) => Object.entries(cost).every(([k, v]) => (g.resource
 
 // What a tech is *for*, when that matters more than its flavour name: the
 // class line reads as classes, so the way to a Fighter can be found by eye.
-const SCHOOL_OUTCOME = { combat_school: 'Combat classes', mage_school: 'Mage classes', temple: 'Divine classes',
-  knight_academy: 'Combat prestige', wizardry_academy: 'Mage prestige', cathedral: 'Divine prestige' };
-function techOutcome(id) {
-  const R = RESEARCH[id];
-  const hit = R && R.unlock.find(b => SCHOOL_OUTCOME[b]);
-  return hit ? '🎓 ' + SCHOOL_OUTCOME[hit] : '';
-}
 
 function sectHtml(title, meta = '') {
   return `<div class="sect"><span>${title}</span>${meta !== '' && meta != null ? `<em>${meta}</em>` : ''}</div>`;
@@ -1932,8 +1925,8 @@ export class UI {
     const d = $('#drawer');
     if (!this.drawer) { d.classList.add('hidden'); return; }
     d.classList.remove('hidden');
-    d.classList.toggle('wide', ['people', 'roster', 'classes', 'trade', 'services', 'party', 'farm', 'colony', 'log', 'workshop', 'bestiary'].includes(this.drawer));
-    d.classList.toggle('xwide', ['research', 'region'].includes(this.drawer));
+    d.classList.toggle('wide', ['people', 'roster', 'classes', 'trade', 'farm', 'colony', 'log', 'workshop', 'bestiary'].includes(this.drawer));
+    d.classList.toggle('xwide', ['research', 'region', 'party', 'services'].includes(this.drawer));
     const body = $('#drawer .body');
     const t = $('#drawer .d-title');
     const grp = UI.groupOf(this.drawer);
@@ -2035,8 +2028,10 @@ export class UI {
       ],
     }));
 
+    // Needs and labour side by side: two short charts that read together.
+    const [needCol, workCol] = this.dcols(body);
     // --- needs: a ranked bar chart, worst first, because that is the reading
-    body.appendChild(el('div', 'sect', 'Needs across the hold'));
+    needCol.appendChild(el('div', 'sect', 'Needs across the hold'));
     const needRows = ['hunger', 'rest', 'joy'].map(nk => {
       const vals = home.map(c => c.needs[nk]);
       const avg = vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : 0;
@@ -2048,7 +2043,7 @@ export class UI {
         note: `worst ${Math.round(worst * 100)}%`,
       };
     }).sort((a, b) => a.value - b.value);
-    body.appendChild(el('div', '', bars({ rows: needRows, max: 100, fmt: (v) => v + '%' })));
+    needCol.appendChild(el('div', '', bars({ rows: needRows, max: 100, fmt: (v) => v + '%' })));
 
     // --- labour: composition of a whole, so a stacked bar with a full legend
     const census = {};
@@ -2056,10 +2051,10 @@ export class UI {
     for (const c of g.colonists) census[labourOf(c)]++;
     const segs = LABOUR.filter(l => census[l.id] > 0)
       .map(l => ({ name: l.name, icon: l.icon, color: l.color, value: census[l.id] }));
-    body.appendChild(el('div', '', sectHtml('Who is doing what', `${g.colonists.length} people`)));
-    body.appendChild(el('div', '', stack({ segments: segs })));
-    body.appendChild(el('div', '', legendRow(segs)));
-    body.appendChild(el('div', 'hint', 'Right now. Change who does what in People › Duties.'));
+    workCol.appendChild(el('div', '', sectHtml('Who is doing what', `${g.colonists.length} people`)));
+    workCol.appendChild(el('div', '', stack({ segments: segs })));
+    workCol.appendChild(el('div', '', legendRow(segs)));
+    workCol.appendChild(el('div', 'hint', 'Right now. Change who does what in People › Duties.'));
 
     // --- trends: the same readings over the last ten days
     body.appendChild(el('div', '', sectHtml('Last ten days', 'hover a line for the day')));
@@ -2524,12 +2519,33 @@ export class UI {
    * ladder it is climbing, and a ledger of every trip.
    */
   drawParty(body) {
-    // Read top to bottom as the questions come: what state is the gate in, is
-    // anyone inside, who goes next, what waits for them, what comes out tonight.
-    this.drawLairGoal(body);
-    this.drawRiftParties(body);
-    this.drawPartyLayout(body);
-    this.drawRiftStatus(body);
+    // Two columns, so the whole Rift fits without scrolling on a laptop. Left:
+    // what the gate holds — the goal, what waits inside today and what comes
+    // out tonight. Right: the decision — who goes next — then the floors
+    // (who is down there now) and how far the Rift has climbed.
+    // On a phone the columns would stack, burying the Enter button under the
+    // forecast, so a narrow window keeps the one-column reading order instead.
+    if ((body.clientWidth || 900) < 740) {
+      this.drawLairGoal(body);
+      this.drawRiftParties(body);
+      this.drawPartyLayout(body);
+      this.drawRiftStatus(body);
+      return;
+    }
+    const [left, right] = this.dcols(body);
+    this.drawLairGoal(left);
+    this.drawPartyLayout(right);
+    this.drawRiftParties(right);
+    this.drawRiftStatus(left, right);
+  }
+
+  /** Split a window body into two columns (one on a narrow screen). */
+  dcols(body, cls = '') {
+    const wrap = el('div', 'dcols' + (cls ? ' ' + cls : ''));
+    const a = el('div', 'dcol'), b = el('div', 'dcol');
+    wrap.appendChild(a); wrap.appendChild(b);
+    body.appendChild(wrap);
+    return [a, b];
   }
 
   /**
@@ -2691,7 +2707,8 @@ export class UI {
   }
 
   /** What waits inside, what comes out tonight, the climb and the ledger. */
-  drawRiftStatus(body) {
+  /** The forecast into `body`; the rank ladder and the trip ledger into `side` (default: the same). */
+  drawRiftStatus(body, side = body) {
     const g = this.game;
     const R = g.rift;
     const d = R.forecast;
@@ -2735,8 +2752,8 @@ export class UI {
     body.appendChild(pair);
 
     // --- rank ladder
-    body.appendChild(el('div', '', sectHtml('The climb to SSS', `rank ${g.riftRank} · level ${R.level}`)));
-    body.appendChild(el('div', 'rf-ladder', RIFT_RANKS.map(([at, name], i) => {
+    side.appendChild(el('div', '', sectHtml('The climb to SSS', `rank ${g.riftRank} · level ${R.level}`)));
+    side.appendChild(el('div', 'rf-ladder', RIFT_RANKS.map(([at, name], i) => {
       const nextAt = RIFT_RANKS[i + 1] ? RIFT_RANKS[i + 1][0] : Infinity;
       const st = R.level >= nextAt ? 'past' : R.level >= at ? 'now' : 'ahead';
       const day = (at - 1) * RIFT_DAYS_PER_LEVEL + 1;
@@ -2748,14 +2765,14 @@ export class UI {
       const hist = g.expeditionHistory;
       const clears = hist.filter(h => h.outcome === 'clear').length;
       const wipes = hist.filter(h => h.outcome === 'wipe').length;
-      body.appendChild(el('div', '', sectHtml('Ledger', `${hist.length} trips · <span style="color:var(--good)">${clears} cleared</span> · ${hist.length - clears - wipes} withdrew · <span style="color:var(--danger)">${wipes} lost</span>`)));
+      side.appendChild(el('div', '', sectHtml('Ledger', `${hist.length} trips · <span style="color:var(--good)">${clears} cleared</span> · ${hist.length - clears - wipes} withdrew · <span style="color:var(--danger)">${wipes} lost</span>`)));
       for (const h of hist.slice(-8).reverse()) {
         const mark = h.outcome === 'clear' ? ['Cleared', 'good'] : h.outcome === 'wipe' ? ['Lost', 'bad'] : ['Withdrew', 'warn'];
         const c = el('div', 'dv-led');
         c.innerHTML = `<span class="dv-day">Day ${Math.floor(h.tick / TICKS_PER_DAY) + 1}</span><b>${esc(h.dungeon)}</b>
           <span class="mini">🚪 ${h.rooms} · ⚔️ ${h.kills}</span><span class="badge ${mark[1]}">${mark[0]}</span>`;
         c.onclick = () => { this.sel = { kind: 'history', ref: h }; this.sigs.insp = null; this.renderInspector(); };
-        body.appendChild(c);
+        side.appendChild(c);
       }
     }
   }
@@ -2798,8 +2815,15 @@ export class UI {
       });
       col.forEach((t, i) => { row[t] = i; });
     });
-    const W = 172, H = 60, CG = 44, RG = 10, PAD = 8;
+    // Nodes are sized to the window: full size where there is room, smaller
+    // (down to a readable floor) where there isn't, so the whole tree fits
+    // without scrolling on a laptop and only scrolls when it truly can't.
     const tallest = Math.max(...cols.map(c => c.length));
+    const CG = 30, RG = 6, PAD = 8;
+    const roomW = (body.clientWidth || 900) - 30;
+    const roomH = (body.clientHeight || 700) - 26 - (libs ? 0 : 46) - (g.research.queue.length ? 34 : 0);
+    const W = clamp(Math.floor((roomW - PAD * 2 - (cols.length - 1) * CG) / cols.length), 140, 172);
+    const H = clamp(Math.floor((roomH - PAD * 2 - 22) / tallest) - RG, 42, 60);
     const pos = {};
     cols.forEach((col, ci) => {
       const off = (tallest - col.length) * (H + RG) / 2;   // centre short columns
@@ -2828,10 +2852,10 @@ export class UI {
       const qi = g.research.queue.indexOf(t);
       const badge = st === 'done' ? '✓' : st === 'cur' ? '⏳' : st === 'queued' ? '#' + (qi + 1) : st === 'locked' ? '🔒' : '';
       const unlocks = (T.unlock || []).map(u => BUILDING_ICON[u] || '').join('');
-      return `<div class="tn tn-${st}" data-tech="${t}" data-tip="tech:${t}" style="left:${pos[t].x}px;top:${pos[t].y}px;width:${W}px;height:${H}px">
+      return `<div class="tn tn-${st}" data-tech="${t}" data-tip="tech:${t}" style="left:${pos[t].x}px;top:${pos[t].y}px;width:${W}px;height:${H}px;--th:${H}px">
         <div class="tn-ic">${TECH_ICON[t] || '🔬'}</div>
-        <div class="tn-bd"><div class="tn-nm">${T.name}${techOutcome(t) ? `<em class="tn-out">${techOutcome(t)}</em>` : ''}</div>
-          <div class="tn-mt"><span>${T.cost}</span><span class="tn-un">${unlocks}${T.bonus ? '⭐' : ''}</span></div>
+        <div class="tn-bd"><div class="tn-nm">${T.name}</div>
+          <div class="tn-mt"><span>${T.cost}${techOutcome(t) ? ` <em class="tn-out">🎓 ${techOutcome(t, true)}</em>` : ''}</span><span class="tn-un">${unlocks}${T.bonus ? '⭐' : ''}</span></div>
           <div class="tn-pb"><i style="width:${Math.round(f * 100)}%"></i></div></div>
         ${badge ? `<div class="tn-bg">${badge}</div>` : ''}</div>`;
     }).join('');
@@ -3110,7 +3134,11 @@ export class UI {
     for (const d of L.days.slice(-7)) for (const [k, v] of Object.entries(d.spent || {})) week[k] = (week[k] || 0) + v;
     for (const [k, v] of Object.entries(L.today || {})) week[k] = (week[k] || 0) + v;
     const weekTotal = Object.values(week).reduce((a, b) => a + b, 0);
-    const wrap = el('div', 'shops');
+    // Two columns: the shops and spending on the left, journeys on the right.
+    const box = el('div', 'dcols');
+    const shopsCol = el('div', 'dcol shops'), tripsCol = el('div', 'dcol shops');
+    box.appendChild(shopsCol); box.appendChild(tripsCol);
+    let wrap = shopsCol;
     const sect = (t, m) => el('div', 'shop-sect', sectHtml(t, m));
     const btn = (label, act, cost, tip = '', ok = true) => `<button class="act${ok && gold >= cost ? '' : ''}" ${act} ${ok && gold >= cost ? '' : 'disabled'} data-tipt="${esc(tip)}">${label}${cost ? ` <span class="cost">🪙${cost}</span>` : ''}</button>`;
 
@@ -3178,6 +3206,7 @@ export class UI {
     const ow = g.overworld;
     const sites = ow ? ow.sites.filter(s => s.discovered && SITE_KINDS[s.kind].trade) : [];
     const party = [...this.squad].map(id => g.colonists.find(c => c.id === id)).filter(c => c && !c.away && !(c.mapId || 0));
+    wrap = tripsCol;
     wrap.appendChild(sect('🗺️ Journeys', party.length ? `${party.map(c => esc(c.name.short)).join(', ')} would go` : 'select who goes on the colonist bar'));
     for (const j of g.journeys || []) {
       const site = ow.sites.find(s => s.id === j.site);
@@ -3199,6 +3228,7 @@ export class UI {
 
     // Trading post orders
     const post = tradingPostLevel(g);
+    wrap = shopsCol;
     wrap.appendChild(sect(`⚖️ Standing orders${post ? ` <span class="lvl">L${post}</span>` : ''}`, post ? 'the caravan fills these when it comes' : '<span class="need">needs a Trading Post</span>'));
     if (post) {
       const orders = g.orders || {};
@@ -3214,7 +3244,7 @@ export class UI {
     const ch = builtLevel(g, 'counting_house');
     wrap.appendChild(el('div', 'hint', ch ? `The Counting House keeps ${vaultSafe(g)} gold safe from raiders, and pays up to ${15 * ch} gold interest after a week without the camp being overrun.` : 'A Counting House (Coinage) keeps gold safe from raiders and pays interest in quiet weeks.'));
 
-    wrap.onclick = (e) => {
+    box.onclick = (e) => {
       const b = e.target.closest && e.target.closest('button,[data-hire]');
       if (!b || b.disabled) return;
       const d = b.dataset;
@@ -3243,7 +3273,7 @@ export class UI {
       if (r) this.toast(r, 'warn'); else if (r === '') this.flash('Done', 'good');
       this.sigs.drawer = null; this.renderDrawer(); this.renderTop();
     };
-    body.appendChild(wrap);
+    body.appendChild(box);
   }
 
   /**
@@ -3258,7 +3288,7 @@ export class UI {
     const potions = POTION_IDS.reduce((s, id) => s + g.potionCount(id), 0);
     const reagents = Object.values(g.reagents || {}).reduce((s, v) => s + (v > 0 ? v : 0), 0);
     body.appendChild(profileCard({
-      tone: '#c7743e', avatar: '⚒️',
+      slim: true, tone: '#c7743e', avatar: '⚒️',
       name: 'Workshop',
       sub: 'Everything the hold makes, and what it makes it from.',
       meta: [['', station('smithy', 'Smithy')], ['', station('alchemy', 'Alchemy Table')], ['', station('magic_lab', 'Magic Lab')], ['', station('spellmason', 'Spellmason')]],
