@@ -9,7 +9,7 @@
 // with a twist that asks the player for a particular answer.
 // ============================================================================
 import { clamp } from './rng.js';
-import { ABILITIES, SKILL_IDS } from './data.js';
+import { ABILITIES, SKILL_IDS, ATTRS, mod } from './data.js';
 import { resistTable, immunitySet, TAGS } from './elements.js';
 import { powerOf } from './npc.js';
 import { generateItem, generateLoot } from './items.js';
@@ -82,6 +82,53 @@ export const FAMILIES = {
   monstrosity:{ name: 'Monstrosities', race: 'beast',  faction: 'wild', color: '#b08a5a', icon: '🐍', hostility: 86, tags: [], drops: { leather: 3, food: 2, gems: 1 }, ess: [], gear: 0.04 },
 };
 export const FAMILY_IDS = Object.keys(FAMILIES);
+
+// --- stat lines ------------------------------------------------------------------
+// Monsters carry the same six attributes people do, and they are read the same
+// way: Strength or Dexterity (whichever it strikes with) adds to its to-hit and
+// damage, Dexterity to how early it acts and how hard it is to hit, Constitution
+// to its health, and Intellect and Wisdom to how cleverly it fights and how well
+// it shrugs off minds games. Each family has a build — offsets from an ordinary 10
+// — and each monster rolls a little either side of it, so two goblins differ.
+export const FAMILY_BUILDS = {
+  goblinoid:   { str: 0,  dex: 3,  con: 0,  int: 0,  wis: -1, cha: -2 },
+  beast:       { str: 3,  dex: 2,  con: 2,  int: -7, wis: 2,  cha: -5 },
+  undead:      { str: 2,  dex: -2, con: 3,  int: -5, wis: -2, cha: -6 },
+  ooze:        { str: 1,  dex: -5, con: 5,  int: -9, wis: -4, cha: -9 },
+  elemental:   { str: 2,  dex: 1,  con: 3,  int: -5, wis: 0,  cha: -4 },
+  giant:       { str: 6,  dex: -3, con: 5,  int: -3, wis: -1, cha: -2 },
+  construct:   { str: 4,  dex: -3, con: 5,  int: -8, wis: -4, cha: -9 },
+  aberration:  { str: -1, dex: 0,  con: 2,  int: 6,  wis: 4,  cha: 2 },
+  fiend:       { str: 2,  dex: 2,  con: 1,  int: 3,  wis: 1,  cha: 5 },
+  dragon:      { str: 5,  dex: 0,  con: 4,  int: 3,  wis: 2,  cha: 4 },
+  fey:         { str: -2, dex: 4,  con: -1, int: 2,  wis: 2,  cha: 6 },
+  underdark:   { str: 1,  dex: 2,  con: 1,  int: 1,  wis: 1,  cha: -1 },
+  monstrosity: { str: 3,  dex: 1,  con: 3,  int: -6, wis: 1,  cha: -5 },
+};
+
+/** Which attribute a monster strikes with. */
+export function monsterStrikeAttr(M) { return M.range === 'ranged' || M.row === 'B' ? 'dex' : 'str'; }
+
+/**
+ * A monster's six attributes: its family's build, its role, its level and a
+ * small roll. `r` is an RNG of its own, so rolling stats never shifts the
+ * dungeon's stream.
+ */
+export function monsterAttributes(r, M, L, tags) {
+  const B = FAMILY_BUILDS[M.fam] || {};
+  const a = {};
+  for (const k of ATTRS) a[k] = 10 + (B[k] || 0) + r.int(-2, 2);
+  if (M.row === 'B' || M.range === 'ranged') a.dex += 2;
+  if (tags.has('caster')) { a.int += 3; a.wis += 1; }
+  if (tags.has('leader')) { a.cha += 3; a.int += 1; }
+  if (tags.has('boss')) { a.str += 2; a.con += 3; }
+  // Deeper monsters have grown into their bodies: a point in their striking
+  // attribute and in Constitution every six levels.
+  a[monsterStrikeAttr(M)] += Math.floor(L / 6);
+  a.con += Math.floor(L / 6);
+  for (const k of ATTRS) a[k] = clamp(a[k], 1, 30);
+  return a;
+}
 
 // --- monster abilities -----------------------------------------------------------
 // Same schema as class abilities (see data.js). 'element' as dmg means the
@@ -362,7 +409,9 @@ export function createMonster(rng, id, tier, o = {}) {
   const tagList = [...tags];
   for (const t of tagList) poise += (TAGS[t] && TAGS[t].poise) || 0;
   const hit = 4 + 1.6 * L;
-  const maxHp = Math.max(6, Math.round((20 + 10 * L) * hpM));
+  const attributes = monsterAttributes(rng.fork('attrs:' + MON_ID), M, L, tags);
+  const strike = mod(attributes[monsterStrikeAttr(M)]), quick = mod(attributes.dex);
+  const maxHp = Math.max(6, Math.round((20 + 10 * L) * hpM * (1 + 0.05 * mod(attributes.con))));
   const affixElement = affixes.map(a => AFFIXES[a].element).find(Boolean) || null;
   const row = M.row === 'B' ? 'back' : 'front';
   const skill = clamp(Math.round(L * 0.7), 0, 20);
@@ -371,13 +420,13 @@ export function createMonster(rng, id, tier, o = {}) {
   const title = (affixes.length ? AFFIXES[affixes[0]].name + ' ' : '') + M.name;
   const combat = {
     stat: 'melee',
-    acc: Math.round(5 + 1.15 * L) + (M.acc || 0),
+    acc: Math.round(5 + 1.15 * L) + (M.acc || 0) + strike,
     dmg: [Math.max(1, Math.round(hit * 0.7 * dmgM)), Math.max(2, Math.round(hit * 1.3 * dmgM))],
     dmgType: M.type || 'slash', dmgElement: affixElement,
-    dmgBonus: 0,
+    dmgBonus: strike,
     armor: Math.round(2 + L * 0.75) + (M.arm || 0),
-    def: Math.round((2 + L * 0.75) * 0.7) + tagList.reduce((s, t) => s + ((TAGS[t] && TAGS[t].def) || 0), 0),
-    init: M.init ?? 1,
+    def: Math.round((2 + L * 0.75) * 0.7) + tagList.reduce((s, t) => s + ((TAGS[t] && TAGS[t].def) || 0), 0) + Math.floor(quick / 2),
+    init: (M.init ?? 1) + quick,
     mult: 1, leech,
     role: M.row === 'B' ? 'back' : 'front',
     row, range: M.range || 'melee', reach: !!M.reach,
@@ -394,7 +443,7 @@ export function createMonster(rng, id, tier, o = {}) {
     name: { short: title, full: title, first: title },
     race: F.race, klass: 'brute', background: 'none', faction: F.faction,
     level: L, tier, boss: !!o.boss, affixes,
-    attributes: { str: 10 + L / 2, dex: 10, con: 10 + L / 2, int: tags.has('caster') || tags.has('leader') ? 14 : 6, wis: 10, cha: 6 },
+    attributes,
     traits: [], skills, passions: {}, hostility: F.hostility, hostilityBase: F.hostility,
     maxHp, hp: maxHp, injuries: [], thoughts: [], relations: {},
     equipment: { weapon: null, armor: null },

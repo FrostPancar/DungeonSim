@@ -1763,7 +1763,7 @@ const BUILDING_ICON = {
   door: '🚪', barricade: '🚧',
   bed: '🛏️', table: '🍽️', brazier: '🔥', statue: '🗿', tavern: '🍺',
   stockpile: '📦',
-  farm: '🌱', mushroom: '🍄', field: '🌾', pasture: '🐾', barn: '🏚️',
+  farm: '🌱', mushroom: '🍄', field: '🌾', pasture: '🐾', pen: '🐾', pen_gate: '🚪', barn: '🏚️',
   trough: '🥣', butchery: '🔪', compost: '♻️',
   kitchen: '🍳', carpenter: '🪚', smithy: '⚒️', alchemy: '⚗️',
   library: '📚', infirmary: '⚕️',
@@ -2379,6 +2379,10 @@ const BUILDINGS = {
   watchpost: { name: 'Watchpost',       cat: 'martial',   cost: { wood: 15, stone: 10 },   work: 55,  solid: false, glyph: 'V', watch: 1, desc: 'Earlier raid warning, defence bonus.' },
   pasture:   { name: 'Pasture Post',    cat: 'farm',      cost: { wood: 10 },              work: 30,  solid: false, glyph: 'п', desc: 'Marks grazing ground. Holds 4 head of stock.' },
   barn:      { size: [3, 3], walled: true, name: 'Barn',            cat: 'farm',      cost: { wood: 35, stone: 10 },   work: 90,  solid: false, glyph: 'B', desc: 'Shelter for 8 more head, and better yields.' },
+  // The pen is dragged out as a rectangle: 'pen' is its fence, one per edge tile,
+  // priced like a timber wall; the gate comes with it and is never placed alone.
+  pen:       { name: 'Animal Pen',      cat: 'farm',      cost: { wood: 4 },               work: 20,  solid: true,  hp: 90, glyph: '|', beauty: 0.5, desc: 'Drag out a rectangle: a fence goes round its edge with a gate on the side facing camp. Tame stock lives inside. Each fence post costs as much as a timber wall.' },
+  pen_gate:  { name: 'Pen Gate',        cat: 'farm',      cost: { wood: 4 },               work: 20,  solid: false, hp: 90, glyph: '=', hidden: true, desc: 'The way into a pen. People and beasts on a lead pass; loose stock stays inside.' },
   trough:    { name: 'Feed Trough',     cat: 'farm',      cost: { wood: 12, stone: 4 },    work: 30,  solid: false, glyph: 'u', desc: 'Lets stock eat from stores when grazing is thin.' },
   butchery:  { name: 'Butcher Block',   cat: 'farm',      cost: { wood: 15, iron: 4 },     work: 45,  solid: false, glyph: 'Ϟ', job: 'butcher', desc: 'Slaughter stock for meat and hide.' },
   compost:   { name: 'Compost Heap',    cat: 'farm',      cost: { wood: 8 },               work: 25,  solid: false, glyph: 'o', job: 'compost', desc: 'Restores fertility to nearby fields.' },
@@ -2476,7 +2480,7 @@ const RESEARCH = {
   relicry:    { name: 'Relic Binding',    cost: 1400,  req: ['wardstone'],  unlock: ['reliquary'],           bonus: { loot: 0.2 }, desc: 'Relics grant permanent power.' },
   deepmaps:   { name: 'Rift Cartography', cost: 1100,  req: ['arcana1'],    unlock: [],                      bonus: { loot: 0.15, ward: 0.1 }, desc: 'Map the shifting layers: +15% loot, waves 10% weaker.' },
   agriculture:{ name: 'Agriculture',      cost: 150,  req: ['husbandry'],  unlock: ['field','compost'],     bonus: { farmYield: 0.2 }, desc: 'Proper fields, crop rotation, compost.' },
-  ranching:   { name: 'Ranching',         cost: 240,  req: ['husbandry'],  unlock: ['pasture','trough','butchery','stable'], bonus: { husbandry: 0.15 }, desc: 'Tame and keep livestock.' },
+  ranching:   { name: 'Ranching',         cost: 240,  req: ['husbandry'],  unlock: ['pasture','pen','pen_gate','trough','butchery','stable'], bonus: { husbandry: 0.15 }, desc: 'Tame and keep livestock.' },
   stockbreed: { name: 'Stockbreeding',    cost: 460,  req: ['ranching'],   unlock: ['barn'],                bonus: { husbandry: 0.35, tame: 0.2 }, desc: 'Bigger herds, richer yields, easier taming.' },
   cartography:{ name: 'Cartography',      cost: 280,  req: ['letters'],    unlock: [],                      bonus: { scout: 1 }, desc: 'Scouts chart more of the region at every dawn.' },
   logistics:  { name: 'Logistics',        cost: 300,  req: ['letters'],    unlock: [],                      bonus: { haul: 0.35, storage: 40 }, desc: 'Faster hauling, more storage.' },
@@ -5337,6 +5341,7 @@ function initSoil(world, biome) {
 
 
 
+
 // power/armor feed combat; pack raises expedition haul; forage is food/day.
 const ANIMALS = {
   fowl:      { name: 'Cragfowl',    glyph: 'v', color: '#d8b46a', hp: 9,   power: 1,  armor: 0, tameDC: 6,  forage: 0.35, matureDays: 4,  gestDays: 3,  litter: [2, 4],
@@ -5390,6 +5395,49 @@ function resetBeastIds(n = 1) { NEXT_BEAST = n; }
 function beastIdCounter() { return NEXT_BEAST; }
 
 const BEAST_NAMES = ['Ash', 'Bell', 'Cinder', 'Dun', 'Ember', 'Flint', 'Grit', 'Hazel', 'Juniper', 'Kettle', 'Loam', 'Moss', 'Nettle', 'Onyx', 'Pebble', 'Quill', 'Rust', 'Slate', 'Thistle', 'Umber', 'Vetch', 'Willow'];
+
+// --- stat lines ------------------------------------------------------------------
+// Beasts carry a person's six attributes too, read the same way in a fight
+// (see beastAsCombatant): Strength to hit and damage, Dexterity to act first and
+// dodge, Constitution to health, Wisdom to keep its nerve. Each species has a
+// build — offsets from an ordinary 10 — and each animal rolls a little either
+// side of it. Young inherit the average of their parents.
+const ANIMAL_BUILDS = {
+  fowl:       { str: -6, dex: 4,  con: -4, int: -8, wis: 2,  cha: -4 },
+  cavegoat:   { str: 1,  dex: 3,  con: 2,  int: -7, wis: 2,  cha: -5 },
+  woolback:   { str: 0,  dex: -1, con: 3,  int: -8, wis: 0,  cha: -4 },
+  boar:       { str: 4,  dex: 0,  con: 4,  int: -8, wis: 0,  cha: -6 },
+  ox:         { str: 6,  dex: -3, con: 6,  int: -8, wis: 0,  cha: -5 },
+  packlizard: { str: 4,  dex: -2, con: 5,  int: -8, wis: 0,  cha: -6 },
+  warhound:   { str: 3,  dex: 4,  con: 2,  int: -6, wis: 3,  cha: -2 },
+  direwolf:   { str: 6,  dex: 4,  con: 4,  int: -5, wis: 3,  cha: -3 },
+  chitinbug:  { str: 2,  dex: -2, con: 5,  int: -9, wis: -2, cha: -8 },
+  duskmoth:   { str: -4, dex: 5,  con: -2, int: -6, wis: 3,  cha: 0 },
+};
+
+function rollBeastAttributes(r, species, parents) {
+  const B = ANIMAL_BUILDS[species] || {};
+  const a = {};
+  for (const k of ATTRS) {
+    const base = parents && parents[0].attributes && parents[1].attributes
+      ? Math.round((parents[0].attributes[k] + parents[1].attributes[k]) / 2) + r.int(-1, 1)
+      : 10 + (B[k] || 0) + r.int(-2, 2);
+    a[k] = clamp(base, 1, 30);
+  }
+  return a;
+}
+
+/** A beast's attributes. A beast from an older save gets its species' build, rolled from its id. */
+function beastAttributes(b) {
+  if (!b.attributes) b.attributes = rollBeastAttributes(new RNG('attrs:' + b.id), b.species, null);
+  return b.attributes;
+}
+
+/** Full-grown health for this beast at its age: its species, traits and Constitution. */
+function beastHpTarget(b) {
+  const A = ANIMALS[b.species];
+  return Math.max(3, Math.round(A.hp * (1 + beastMod(b, 'hp')) * (1 + 0.05 * mod(beastAttributes(b).con)) * clamp(b.age / A.matureDays, 0.4, 1)));
+}
 function beastMod(beast, key) {
   let v = 0;
   for (const t of beast.traits) { const m = BEAST_TRAITS[t]?.mods?.[key]; if (m) v += m; }
@@ -5419,7 +5467,9 @@ function createBeast(rng, species, { tame = false, age = null, parents = null } 
     pregnant: 0, bonded: null,
     x: 0, y: 0, moveCd: 0, dead: false, away: false,
   };
-  beast.maxHp = Math.max(3, Math.round(A.hp * (1 + beastMod(beast, 'hp')) * clamp(beast.age / A.matureDays, 0.4, 1)));
+  // Its own stream, so rolling stats never shifts the world's.
+  beast.attributes = rollBeastAttributes(rng.fork('attrs:' + beast.id), species, parents);
+  beast.maxHp = beastHpTarget(beast);
   beast.hp = beast.maxHp;
   return beast;
 }
@@ -5437,20 +5487,21 @@ function tameDC(b) { return ANIMALS[b.species].tameDC + beastMod(b, 'tame'); }
 function beastAsCombatant(b) {
   const A = ANIMALS[b.species];
   const pw = beastPower(b);
+  const at = beastAttributes(b), str = mod(at.str), dex = mod(at.dex);
   return {
     id: b.id, beast: b,
     name: { short: b.name, full: `${b.name} the ${A.name}` },
     race: 'beast', klass: 'brute', level: Math.max(1, Math.round(b.age / 4)),
     hp: b.hp, maxHp: b.maxHp, traits: [], injuries: [], skills: {}, abilities: [],
-    attributes: { str: 12, dex: 12, con: 12, int: 3, wis: 10, cha: 5 },
+    attributes: { ...at },
     equipment: { weapon: null, armor: null },
     hostility: 20, thoughts: [], relations: {}, xp: {}, passions: {},
     combat: {
-      stat: 'melee', acc: 3 + Math.round(pw * 0.45), dmg: [Math.max(1, Math.round(pw * 0.55)), Math.max(2, Math.round(pw * 1.25))],
-      dmgBonus: Math.round(pw * 0.25), armor: A.armor + Math.round(beastMod(b, 'hp') * 2),
-      init: 3, mult: 1, leech: 0, role: 'front', flee: 0.22,
+      stat: 'melee', acc: 3 + Math.round(pw * 0.45) + str, dmg: [Math.max(1, Math.round(pw * 0.55)), Math.max(2, Math.round(pw * 1.25))],
+      dmgBonus: Math.round(pw * 0.25) + str, armor: A.armor + Math.round(beastMod(b, 'hp') * 2),
+      init: 3 + dex, mult: 1, leech: 0, role: 'front', flee: clamp(0.22 - mod(at.wis) * 0.03, 0.02, 0.5),
       row: 'front', range: 'melee', dmgType: 'slash', tags: ['beast'], res: {}, immune: [], resist: {}, poise: 0,
-      def: Math.round((A.armor + Math.round(beastMod(b, 'hp') * 2)) * 0.7),
+      def: Math.round((A.armor + Math.round(beastMod(b, 'hp') * 2)) * 0.7) + Math.floor(dex / 2),
     },
   };
 }
@@ -5506,6 +5557,9 @@ function tickBeasts(game) {
   const forageScale = (game.seasonDef ? game.seasonDef.forage : 1) * (BIOMES[game.biome] ? BIOMES[game.biome].forage : 0.8);
   const pastures = world.findBuildings('pasture');
   const troughs = world.findBuildings('trough');
+  const pens = livePens(world);
+  const headcount = new Map();
+  for (const b of game.beasts) if (b.tame && !b.dead && b.pen != null) headcount.set(b.pen, (headcount.get(b.pen) || 0) + 1);
 
   for (let i = game.beasts.length - 1; i >= 0; i--) {
     const b = game.beasts[i];
@@ -5515,7 +5569,7 @@ function tickBeasts(game) {
     b.age += dt;
 
     // Growth toward adult size.
-    const target = Math.max(3, Math.round(A.hp * (1 + beastMod(b, 'hp')) * clamp(b.age / A.matureDays, 0.4, 1)));
+    const target = beastHpTarget(b);
     if (target > b.maxHp) { b.maxHp = target; b.hp = Math.min(target, b.hp + (target - b.maxHp) + 1); }
 
     // Feeding. Wild animals forage freely; tame ones need pasture or a trough.
@@ -5527,7 +5581,8 @@ function tickBeasts(game) {
       const grazed = grazeAt(world, b.x, b.y, forageScale);
       // Below, there's no trough: what moss and fungus the floor grows, thin as it is.
       if (game._m && game._m.kind === 'floor') { b.hunger = clamp(b.hunger + Math.max(0.3, grazed) * dt * 0.8 - need, 0, 1); fed = true; }
-      if (!fed && grazed > 0.15 && pastures.length) { b.hunger = clamp(b.hunger + grazed * dt * 0.8 - need, 0, 1); fed = true; }
+      const penned = b.pen != null && pens.some(p => p.id === b.pen && penInside(p, b.x, b.y));
+      if (!fed && grazed > 0.15 && (pastures.length || penned)) { b.hunger = clamp(b.hunger + grazed * dt * 0.8 - need, 0, 1); fed = true; }
       if (!fed || b.hunger < 0.55) {
         // Eat from the stores — fungus-eaters are cheap to keep.
         const src = A.eatsFungus ? 'food' : 'food';
@@ -5586,6 +5641,23 @@ function tickBeasts(game) {
     // at its handler's heel (or down) is moved by tickFollowers instead.
     if (b.heeling || b.downed) continue;
     b.moveCd -= 1;
+    // Penned stock: walk home through the gate, then keep to the ground inside.
+    const pen = b.tame && pens.length && (!game._m || game._m.kind === 'camp') ? penOf(world, b, pens, headcount) : null;
+    if (pen && b.moveCd <= 0) {
+      if (penInside(pen, b.x, b.y)) {
+        b.moveCd = rng.int(2, 5);
+        const ax = b.x + rng.int(-1, 1), ay = b.y + rng.int(-1, 1);
+        if (penInside(pen, ax, ay) && world.walkable(ax, ay)) occupyMove(game, b, ax, ay);
+      } else {
+        // Beasts think every BEAST_TICK ticks, so a walk home takes a few strides at once.
+        b.moveCd = 1;
+        for (let k = 0; k < 4 && !penInside(pen, b.x, b.y); k++) {
+          if (!huntStep(game, b, (pen.x0 + pen.x1) >> 1, (pen.y0 + pen.y1) >> 1, false)) { b.moveCd = 3; break; }
+        }
+      }
+      continue;
+    }
+    if (pen) continue;
     if (b.moveCd <= 0) {
       b.moveCd = rng.int(2, 5);
       let ax = b.x, ay = b.y;
@@ -5612,9 +5684,75 @@ function grazeAt(world, x, y, scale) {
   return g * scale;
 }
 function herdCap(game) {
-  const pens = game.world.findBuildings('pasture').length;
+  const posts = game.world.findBuildings('pasture').length;
   const barns = game.world.findBuildings('barn').length;
-  return pens * 4 + barns * 8;
+  let penRoom = 0;
+  for (const p of livePens(game.world)) if (penReady(game.world, p)) penRoom += penCapacity(p);
+  return posts * 4 + barns * 8 + penRoom;
+}
+
+// --- pens ---------------------------------------------------------------------
+// A pen is a fenced rectangle the player drags out: fence round the edge and one
+// gate. Its record lives on the world (`world.pens`), so it saves with the map.
+// Tame stock with no one to follow is given a pen with room, walks in through
+// the gate, and then wanders only inside it — the gate lets people and led
+// beasts through, but loose stock never picks its way out.
+const PEN_MIN = 3, PEN_MAX = 24;
+
+/** Is (x, y) inside pen `p`, not on its fence? */
+const penInside = (p, x, y) => x > p.x0 && x < p.x1 && y > p.y0 && y < p.y1;
+/** How many head a pen holds: one per three tiles of ground inside, at least two. */
+function penCapacity(p) { return Math.max(2, Math.floor((p.x1 - p.x0 - 1) * (p.y1 - p.y0 - 1) / 3)); }
+
+/**
+ * The fence and gate for the rectangle (x0, y0)–(x1, y1), in either corner
+ * order. The gate goes in the middle of the side nearest camp, or the next
+ * nearest side if something's in the way. `canPlace(id, x, y)` is the world's.
+ */
+function penLayout(world, x0, y0, x1, y1) {
+  const ax = Math.min(x0, x1), bx = Math.max(x0, x1), ay = Math.min(y0, y1), by = Math.max(y0, y1);
+  const w = bx - ax + 1, h = by - ay + 1;
+  const out = { ok: false, x0: ax, y0: ay, x1: bx, y1: by, w, h, fence: [], gate: null, why: '' };
+  if (w < PEN_MIN || h < PEN_MIN) { out.why = `A pen needs at least ${PEN_MIN}×${PEN_MIN} tiles.`; return out; }
+  if (w > PEN_MAX || h > PEN_MAX) { out.why = `A pen can be at most ${PEN_MAX}×${PEN_MAX} tiles.`; return out; }
+  const mx = (ax + bx) >> 1, my = (ay + by) >> 1;
+  const st = world.start || { x: mx, y: by + 5 };
+  const sides = [[mx, by], [mx, ay], [ax, my], [bx, my]]
+    .map(([x, y], k) => ({ x, y, k, d: Math.hypot(x - st.x, y - st.y) }))
+    .sort((a, b) => a.d - b.d || a.k - b.k);
+  const gate = sides.find(g => world.canPlace('pen_gate', g.x, g.y)) || sides[0];
+  out.gate = [gate.x, gate.y];
+  for (let x = ax; x <= bx; x++) for (const y of [ay, by]) if (!(x === gate.x && y === gate.y)) out.fence.push([x, y]);
+  for (let y = ay + 1; y < by; y++) for (const x of [ax, bx]) if (!(x === gate.x && y === gate.y)) out.fence.push([x, y]);
+  out.ok = true;
+  return out;
+}
+
+/** The pens still standing: a pen whose gate is gone is forgotten. */
+function livePens(world) {
+  const ps = world.pens;
+  if (!ps || !ps.length) return [];
+  const gone = (p) => { const b = world.buildingAt(p.gate[0], p.gate[1]); return !b || b.id !== 'pen_gate'; };
+  if (ps.some(gone)) world.pens = ps.filter(p => !gone(p));
+  return world.pens;
+}
+/** A pen can take stock once its gate is built. */
+function penReady(world, p) { const b = world.buildingAt(p.gate[0], p.gate[1]); return !!(b && b.done && b.id === 'pen_gate'); }
+
+/** The pen a tame beast lives in: its own if it still stands, else the nearest with room. */
+function penOf(world, b, pens, headcount) {
+  let p = b.pen != null ? pens.find(q => q.id === b.pen) : null;
+  if (p && penReady(world, p)) return p;
+  if (p) headcount.set(p.id, (headcount.get(p.id) || 1) - 1);
+  b.pen = null;
+  let best = null, bd = Infinity;
+  for (const q of pens) {
+    if (!penReady(world, q) || (headcount.get(q.id) || 0) >= penCapacity(q)) continue;
+    const d = Math.hypot((q.x0 + q.x1) / 2 - b.x, (q.y0 + q.y1) / 2 - b.y);
+    if (d < bd) { bd = d; best = q; }
+  }
+  if (best) { b.pen = best.id; headcount.set(best.id, (headcount.get(best.id) || 0) + 1); }
+  return best;
 }
 function tameChance(colonist, beast) {
   const skill = colonist.skills.animals || 0;
@@ -5639,6 +5777,10 @@ function packCapacity(beasts) {
 // stairs when they do, fights beside them and carries for them. At home it
 // goes back to the pasture. War beasts at home also turn out when something
 // hostile comes near the camp.
+//
+// Any tame beast can also be told to follow someone (`b.follow`): it then keeps
+// to their heel wherever they walk on its map, camp included, until told to
+// stop. Only a war or pack beast whose handler it is follows them down the stairs.
 
 /** Extra pack room a pack beast gives the handler it follows, per load. */
 const PACK_PER_LOAD = 25;
@@ -5653,9 +5795,12 @@ function leading(c) {
 /** The beasts that follow `c`, on whatever map they are. */
 function followersOf(game, c) {
   const out = [];
-  for (const m of game.maps) for (const b of m.beasts) if (b.tame && !b.dead && b.handler === c.id) out.push(b);
+  for (const m of game.maps) for (const b of m.beasts) if (b.tame && !b.dead && (b.handler === c.id || b.follow === c.id)) out.push(b);
   return out;
 }
+
+/** Can this beast be told to follow someone around? Any tame one can. */
+function canHeel(b) { return !!(b && b.tame && !b.dead); }
 
 /** Can this beast be given a handler at all? */
 function canFollow(b) {
@@ -5717,17 +5862,22 @@ function tickFollowers(v) {
     }
     const A = ANIMALS[b.species];
     let leader = null;
-    if (b.handler) {
-      leader = root.colonists.find(c => c.id === b.handler) || null;
+    const leadId = b.follow || b.handler;
+    if (leadId) {
+      leader = root.colonists.find(c => c.id === leadId) || null;
       if (!leader || leader.dead) {
-        b.handler = null; leader = null;
-        root.log(`${b.name} the ${A.name} has lost its handler.`, 'warn');
+        b.handler = null; b.follow = null; leader = null;
+        root.log(`${b.name} the ${A.name} has lost the one it followed.`, 'warn');
       }
     }
     const lm = leader ? (leader.mapId || 0) : 0;
-    const follow = !!leader && lm === m.id && leading(leader);
+    // Told to follow: at their heel wherever they are on this map. A handler
+    // alone: only once they're heading out.
+    const follow = !!leader && lm === m.id && (b.follow === leader.id || leading(leader));
     // Somewhere else to be: its handler went on without it, or it's alone below.
-    const astray = leader ? lm !== m.id && (leading(leader) || m.kind === 'floor') : m.kind === 'floor';
+    // Only a handler's beast takes the stairs after them.
+    const crosses = !!leader && b.handler === leader.id;
+    const astray = crosses ? lm !== m.id && (leading(leader) || m.kind === 'floor') : m.kind === 'floor';
     if (follow && A.pack) leader.packBonus = (leader.packBonus || 0) + A.pack * PACK_PER_LOAD;
 
     // What it's going for, if anything.
@@ -5834,6 +5984,53 @@ const FAMILIES = {
   monstrosity:{ name: 'Monstrosities', race: 'beast',  faction: 'wild', color: '#b08a5a', icon: '🐍', hostility: 86, tags: [], drops: { leather: 3, food: 2, gems: 1 }, ess: [], gear: 0.04 },
 };
 const FAMILY_IDS = Object.keys(FAMILIES);
+
+// --- stat lines ------------------------------------------------------------------
+// Monsters carry the same six attributes people do, and they are read the same
+// way: Strength or Dexterity (whichever it strikes with) adds to its to-hit and
+// damage, Dexterity to how early it acts and how hard it is to hit, Constitution
+// to its health, and Intellect and Wisdom to how cleverly it fights and how well
+// it shrugs off minds games. Each family has a build — offsets from an ordinary 10
+// — and each monster rolls a little either side of it, so two goblins differ.
+const FAMILY_BUILDS = {
+  goblinoid:   { str: 0,  dex: 3,  con: 0,  int: 0,  wis: -1, cha: -2 },
+  beast:       { str: 3,  dex: 2,  con: 2,  int: -7, wis: 2,  cha: -5 },
+  undead:      { str: 2,  dex: -2, con: 3,  int: -5, wis: -2, cha: -6 },
+  ooze:        { str: 1,  dex: -5, con: 5,  int: -9, wis: -4, cha: -9 },
+  elemental:   { str: 2,  dex: 1,  con: 3,  int: -5, wis: 0,  cha: -4 },
+  giant:       { str: 6,  dex: -3, con: 5,  int: -3, wis: -1, cha: -2 },
+  construct:   { str: 4,  dex: -3, con: 5,  int: -8, wis: -4, cha: -9 },
+  aberration:  { str: -1, dex: 0,  con: 2,  int: 6,  wis: 4,  cha: 2 },
+  fiend:       { str: 2,  dex: 2,  con: 1,  int: 3,  wis: 1,  cha: 5 },
+  dragon:      { str: 5,  dex: 0,  con: 4,  int: 3,  wis: 2,  cha: 4 },
+  fey:         { str: -2, dex: 4,  con: -1, int: 2,  wis: 2,  cha: 6 },
+  underdark:   { str: 1,  dex: 2,  con: 1,  int: 1,  wis: 1,  cha: -1 },
+  monstrosity: { str: 3,  dex: 1,  con: 3,  int: -6, wis: 1,  cha: -5 },
+};
+
+/** Which attribute a monster strikes with. */
+function monsterStrikeAttr(M) { return M.range === 'ranged' || M.row === 'B' ? 'dex' : 'str'; }
+
+/**
+ * A monster's six attributes: its family's build, its role, its level and a
+ * small roll. `r` is an RNG of its own, so rolling stats never shifts the
+ * dungeon's stream.
+ */
+function monsterAttributes(r, M, L, tags) {
+  const B = FAMILY_BUILDS[M.fam] || {};
+  const a = {};
+  for (const k of ATTRS) a[k] = 10 + (B[k] || 0) + r.int(-2, 2);
+  if (M.row === 'B' || M.range === 'ranged') a.dex += 2;
+  if (tags.has('caster')) { a.int += 3; a.wis += 1; }
+  if (tags.has('leader')) { a.cha += 3; a.int += 1; }
+  if (tags.has('boss')) { a.str += 2; a.con += 3; }
+  // Deeper monsters have grown into their bodies: a point in their striking
+  // attribute and in Constitution every six levels.
+  a[monsterStrikeAttr(M)] += Math.floor(L / 6);
+  a.con += Math.floor(L / 6);
+  for (const k of ATTRS) a[k] = clamp(a[k], 1, 30);
+  return a;
+}
 
 // --- monster abilities -----------------------------------------------------------
 // Same schema as class abilities (see data.js). 'element' as dmg means the
@@ -6114,7 +6311,9 @@ function createMonster(rng, id, tier, o = {}) {
   const tagList = [...tags];
   for (const t of tagList) poise += (TAGS[t] && TAGS[t].poise) || 0;
   const hit = 4 + 1.6 * L;
-  const maxHp = Math.max(6, Math.round((20 + 10 * L) * hpM));
+  const attributes = monsterAttributes(rng.fork('attrs:' + MON_ID), M, L, tags);
+  const strike = mod(attributes[monsterStrikeAttr(M)]), quick = mod(attributes.dex);
+  const maxHp = Math.max(6, Math.round((20 + 10 * L) * hpM * (1 + 0.05 * mod(attributes.con))));
   const affixElement = affixes.map(a => AFFIXES[a].element).find(Boolean) || null;
   const row = M.row === 'B' ? 'back' : 'front';
   const skill = clamp(Math.round(L * 0.7), 0, 20);
@@ -6123,13 +6322,13 @@ function createMonster(rng, id, tier, o = {}) {
   const title = (affixes.length ? AFFIXES[affixes[0]].name + ' ' : '') + M.name;
   const combat = {
     stat: 'melee',
-    acc: Math.round(5 + 1.15 * L) + (M.acc || 0),
+    acc: Math.round(5 + 1.15 * L) + (M.acc || 0) + strike,
     dmg: [Math.max(1, Math.round(hit * 0.7 * dmgM)), Math.max(2, Math.round(hit * 1.3 * dmgM))],
     dmgType: M.type || 'slash', dmgElement: affixElement,
-    dmgBonus: 0,
+    dmgBonus: strike,
     armor: Math.round(2 + L * 0.75) + (M.arm || 0),
-    def: Math.round((2 + L * 0.75) * 0.7) + tagList.reduce((s, t) => s + ((TAGS[t] && TAGS[t].def) || 0), 0),
-    init: M.init ?? 1,
+    def: Math.round((2 + L * 0.75) * 0.7) + tagList.reduce((s, t) => s + ((TAGS[t] && TAGS[t].def) || 0), 0) + Math.floor(quick / 2),
+    init: (M.init ?? 1) + quick,
     mult: 1, leech,
     role: M.row === 'B' ? 'back' : 'front',
     row, range: M.range || 'melee', reach: !!M.reach,
@@ -6146,7 +6345,7 @@ function createMonster(rng, id, tier, o = {}) {
     name: { short: title, full: title, first: title },
     race: F.race, klass: 'brute', background: 'none', faction: F.faction,
     level: L, tier, boss: !!o.boss, affixes,
-    attributes: { str: 10 + L / 2, dex: 10, con: 10 + L / 2, int: tags.has('caster') || tags.has('leader') ? 14 : 6, wis: 10, cha: 6 },
+    attributes,
     traits: [], skills, passions: {}, hostility: F.hostility, hostilityBase: F.hostility,
     maxHp, hp: maxHp, injuries: [], thoughts: [], relations: {},
     equipment: { weapon: null, armor: null },
@@ -9991,6 +10190,49 @@ function orderMove(game, ids, x, y) {
   for (const npc of left) { npc.order = { x, y }; npc.task = null; }   // no room: blockedStep will find one
 }
 
+/**
+ * Send people to bed: the bed at (x, y) for whoever is nearest it, and the
+ * nearest other free beds for the rest. A bed someone else owns or is asleep
+ * in is left alone. Returns how many were sent.
+ */
+function orderSleep(game, ids, x, y) {
+  const w = game.world;
+  if (!w.inside(x, y)) return 0;
+  const target = w.building[w.idx(x, y)];
+  if (!target || !target.done || !BUILDINGS[target.id].rest) return 0;
+  const squad = ids.map(id => game.colonists.find(c => c.id === id && !c.away && !c.dead && !c.downed && !c.carriedBy)).filter(Boolean);
+  if (!squad.length) return 0;
+  const mine = new Set(squad.map(c => c.id));
+  // Beds already in use by someone outside the squad.
+  const busy = new Set();
+  for (const c of game.colonists) {
+    if (mine.has(c.id) || c.dead || (c.mapId || 0) !== (game._m.id || 0)) continue;
+    const t = c.task;
+    if (t && t.kind === 'sleep' && t.bed) busy.add(t.x + ',' + t.y);
+    if (c.order && c.order.sleep) busy.add(c.order.x + ',' + c.order.y);
+  }
+  const all = w.findBuildings().filter(r => BUILDINGS[r.b.id].rest);
+  const first = all.find(r => r.b === target);
+  if (!first) return 0;
+  // The clicked bed is taken even if someone else owns it, but not from under a sleeper.
+  const free = (r) => !busy.has(r.x + ',' + r.y) && (!r.b.owner || mine.has(r.b.owner) || r.b === target);
+  if (!free(first) && squad.length === 1) return 0;
+  const beds = [...(free(first) ? [first] : []), ...all.filter(r => r !== first && free(r))
+    .sort((a, b) => Math.hypot(a.x - first.x, a.y - first.y) - Math.hypot(b.x - first.x, b.y - first.y))];
+  // The one nearest the clicked bed takes it; the rest spread over the others.
+  const left = [...squad].sort((a, b) => Math.hypot(a.x - first.x, a.y - first.y) - Math.hypot(b.x - first.x, b.y - first.y));
+  let n = 0;
+  for (const bed of beds) {
+    const npc = left.shift();
+    if (!npc) break;
+    if (!bed.b.owner) bed.b.owner = npc.id;
+    npc.order = { x: bed.x, y: bed.y, sleep: BUILDINGS[bed.b.id].rest };
+    npc.task = null; npc.path = null;
+    n++;
+  }
+  return n;
+}
+
 // --- shared work sites --------------------------------------------------------
 // Mining, cutting and building keep their progress on the tile rather than on
 // whoever is swinging the pick, so two people on one seam finish it twice as
@@ -10108,6 +10350,26 @@ function placeBlueprint(game, x, y, id) {
   return true;
 }
 
+/**
+ * A pen over the rectangle (x0, y0)–(x1, y1): fence blueprints round the edge
+ * and a gate, and a pen record so stock knows where home is. Edge tiles already
+ * walled or fenced are left as they are — they close the pen just the same.
+ * Returns how many pieces were queued.
+ */
+function placePen(game, x0, y0, x1, y1) {
+  const w = game.world;
+  if (!game.unlocked.has('pen')) return 0;
+  const L = penLayout(w, x0, y0, x1, y1);
+  if (!L.ok) return 0;
+  let n = 0;
+  for (const [x, y] of L.fence) if (placeBlueprint(game, x, y, 'pen')) n++;
+  if (!placeBlueprint(game, L.gate[0], L.gate[1], 'pen_gate')) return n;
+  if (!w.pens) w.pens = [];
+  w.nextPen = (w.nextPen || 0) + 1;
+  w.pens.push({ id: w.nextPen, x0: L.x0, y0: L.y0, x1: L.x1, y1: L.y1, gate: L.gate });
+  return n + 1;
+}
+
 /** A floor blueprint. Floors are their own layer under `w.building`, so a
  *  room can be floored and furnished at once — and refloored, since this
  *  happily replaces a finished floor with a new type. */
@@ -10218,7 +10480,7 @@ function rebuildJobs(game) {
     }
   }
   // --- livestock work -------------------------------------------------------
-  const hasPasture = w.findBuildings('pasture').length > 0;
+  const hasPasture = w.findBuildings('pasture').length > 0 || livePens(w).some(p => penReady(w, p));
   const hasButchery = w.findBuildings('butchery').length > 0;
   const tameCount = game.beasts.filter(b => b.tame && !b.dead).length;
   const cap = herdCap(game);
@@ -10475,6 +10737,13 @@ function assignTask(game, npc) {
     // Stairs (or the Rift's mouth): walk up to them, then change maps.
     const o = npc.order;
     npc.task = { kind: 'travel', x: o.x, y: o.y, work: 0, travel: o.travel, recall: !!o.recall };
+    return;
+  }
+  if (npc.order && npc.order.sleep) {
+    // Sent to bed: they go now, and sleep at least a couple of hours even if
+    // they aren't tired — or through to dawn, if it's night.
+    const o = npc.order;
+    npc.task = { kind: 'sleep', x: o.x, y: o.y, work: 0, bed: o.sleep, night: game.isNight, ordered: true, until: game.tick + TICKS_PER_HOUR * 2 };
     return;
   }
   if (npc.order && npc.order.work) {
@@ -10992,8 +11261,10 @@ function doTask(game, npc) {
 
   if (t.kind === 'sleep') {
     npc.state = 'sleeping';
+    // In bed: the order that sent them is done, and they sleep like anyone else.
+    if (npc.order && npc.order.sleep) npc.order = null;
     // A night's sleep lasts the night; any other sleep ends when they're rested.
-    const keepOn = t.night && game.isNight && !npc.order;
+    const keepOn = (t.night && game.isNight && !npc.order) || (t.until > game.tick && !npc.order);
     if (npc.needs.rest >= 0.99 && !keepOn) completeTask(game, npc);
     else if (t.night && npc.order) { npc.task = null; }   // woken by an order
     return;
@@ -15221,6 +15492,8 @@ class Game {
   rush(x, y) { return rushJob(this, x, y); }
   orderMove(ids, x, y) { return orderMove(this, ids, x, y); }
   orderWork(ids, x, y) { return orderWork(this, ids, x, y); }
+  orderSleep(ids, x, y) { return orderSleep(this, ids, x, y); }
+  buildPen(x0, y0, x1, y1) { return placePen(this, x0, y0, x1, y1); }
   /**
    * Someone is down: the nearest able member of the selection goes to pick
    * them up and carry them to safety. Returns the rescuer, or null.
@@ -15643,12 +15916,30 @@ class Game {
    * Give a war or pack beast a handler (a colonist id), or none. It follows
    * them into the Rift and back, fights beside them and carries for them.
    */
+  /** Tell a tame beast to follow someone (or, with null, to stop). A war or
+   *  pack beast also takes them as its handler, so it follows them below too. */
+  setFollow(beastId, colonistId) {
+    let b = null, bm = null;
+    for (const m of this.maps) { b = m.beasts.find(x => x.id === beastId); if (b) { bm = m; break; } }
+    if (!b || !canHeel(b)) return false;
+    const c = colonistId == null ? null : this.colonists.find(x => x.id === colonistId && !x.dead && !x.away);
+    if (colonistId != null && !c) return false;
+    // Only a beast that can take the stairs can be told to follow someone on another floor.
+    if (c && (c.mapId || 0) !== bm.id && !canFollow(b)) return false;
+    if (!c && b.follow != null && b.handler === b.follow) b.handler = null;
+    b.follow = c ? c.id : null;
+    if (c && canFollow(b)) b.handler = c.id;
+    return true;
+  }
+
   setHandler(beastId, colonistId) {
     let b = null;
     for (const m of this.maps) { b = m.beasts.find(x => x.id === beastId); if (b) break; }
     if (!b || !canFollow(b)) return false;
     const c = colonistId == null ? null : this.colonists.find(x => x.id === colonistId && !x.dead);
     b.handler = c ? c.id : null;
+    // A new handler (or none) ends following anyone else.
+    if (b.follow != null && b.follow !== b.handler) b.follow = null;
     return true;
   }
 
@@ -16340,7 +16631,7 @@ function saveSummary(game, extra = {}) {
 // ============================================================================
 const COOP_PROTOCOL = 1;
 // The bundle stamps a hash of src/ in here (build.mjs), so two different builds refuse each other.
-const COOP_BUILD = '9c6a8125f4';
+const COOP_BUILD = 'be8d0e3cd3';
 const COOP_MAX_PLAYERS = 4;
 const COOP_SIG_EVERY = 60;      // one in-game hour: a cheap signature
 const COOP_HASH_EVERY = 720;    // half a day: a hash of the whole game
@@ -16352,10 +16643,10 @@ const COOP_FAR_BEHIND = 2880;          // two days behind: fetch a snapshot rath
  * data: ids, coordinates and strings, never object references.
  */
 const COOP_OPS = {
-  build: true, designate: true, rush: true,
-  orderMove: true, orderWork: true, orderTravel: true, orderAttack: true,
+  build: true, buildPen: true, designate: true, rush: true,
+  orderMove: true, orderWork: true, orderSleep: 1, orderTravel: true, orderAttack: true,
   orderTame: true, orderRescue: true, orderHunt: true, markButcher: true,
-  setPriority: true, setHandler: true, setCrop: true, cancelTraining: true,
+  setPriority: true, setHandler: true, setFollow: true, setCrop: true, cancelTraining: true,
   setResearch: true, unqueueResearch: true, queueResearch: true, researchPart: null,
   launchExpedition: { ok: true, ids: [] }, choosePrestige: null,
   equip: null, unequip: true, upgradeGear: true, forge: null, craftLegendary: null, brew: null,
@@ -16420,6 +16711,7 @@ function applyCoopCommand(game, cmd) {
 function coopResultMessage(op, r) {
   if (typeof r === 'string') return r || null;
   if (r && typeof r === 'object' && r.ok === false) return r.why || r.msg || r.reason || 'That could not be done.';
+  if (r === 0 && op === 'orderSleep') return 'That bed is taken.';
   if (r === false && ['build', 'orderWork', 'buy', 'sell', 'buyLivestock', 'acceptArrival'].includes(op)) return 'That could not be done.';
   return null;
 }
@@ -17809,6 +18101,7 @@ const FLOOR = {
   dark:   { base: '#553a28', seam: 'rgba(20,10,4,0.6)',   hi: 'rgba(255,210,160,0.06)', w: 0.2 },
 };
 const WALL_IDS = new Set(['wall', 'timber_wall', 'door']);
+const PEN_IDS = new Set(['pen', 'pen_gate']);
 const WALL_PAL = {
   stone:  { top: '#8f897d', face: '#4a4640', seam: 'rgba(40,36,30,0.45)' },
   timber: { top: '#8a653d', face: '#4a3220', seam: 'rgba(40,22,10,0.55)' },
@@ -18997,6 +19290,7 @@ class Renderer {
       this.tileSpace(sx, sy);
       if (b.id === 'wall' || b.id === 'timber_wall') { this.drawWall(x, y); continue; }
       if (b.id === 'door') { this.drawDoor(x, y); continue; }
+      if (PEN_IDS.has(b.id)) { this.drawPen(x, y); continue; }
       const sid = S.of[i];
       const s = sid >= 0 ? S.list[sid] : null;
       const o = { x, y, b, now, first: s ? s.tiles[0] === i : true };
@@ -19036,10 +19330,11 @@ class Renderer {
       this.tileSpace(sx, sy);
       ctx.fillStyle = 'rgba(90,170,220,0.16)';
       ctx.fillRect(0.03, 0.03, 0.94, 0.94);
-      const art = ART[b.id] || (b.id === 'timber_wall' ? ART.fence : null);
+      const art = ART[b.id] || (b.id === 'timber_wall' ? ART.fence : null) || (PEN_IDS.has(b.id) ? ART.fence : null);
       if (art) {
         ctx.save(); ctx.globalAlpha = 0.4;
         if (b.id === 'wall' || b.id === 'timber_wall') this.drawWall(x, y, true);
+        else if (PEN_IDS.has(b.id)) this.drawPen(x, y, true);
         else art(ctx, { x, y, b, now, first: true });
         ctx.restore();
       }
@@ -19315,6 +19610,43 @@ class Renderer {
   }
 
   /** Walls connect to walls and doors next to them; stone blocks with a face. */
+  /**
+   * A pen's fence: a post on every tile and rails to whichever neighbours are
+   * pen too, so corners turn and long sides run unbroken. The gate is a plank
+   * door hung between two posts, across the line the fence runs along.
+   */
+  drawPen(x, y, ghost) {
+    const w = this.game.world, ctx = this.ctx;
+    const me = w.buildingAt(x, y);
+    const joins = (dx, dy) => { const b = w.buildingAt(x + dx, y + dy); return !!b && (PEN_IDS.has(b.id) || b.id === 'fence' || WALL_IDS.has(b.id)) && (b.done || ghost); };
+    const N = joins(0, -1), S = joins(0, 1), E = joins(1, 0), W = joins(-1, 0);
+    if (me && me.id === 'pen_gate') {
+      const across = E || W || !(N || S);     // the fence runs east–west through it
+      ctx.save();
+      if (!across) { ctx.translate(0.5, 0.5); ctx.rotate(Math.PI / 2); ctx.translate(-0.5, -0.5); }
+      line(ctx, 0.14, 0.64, 0.86, 0.64, 'rgba(0,0,0,0.3)', 0.06);
+      fillRR(ctx, 0.16, 0.3, 0.68, 0.34, 0.03, '#8a6a42');
+      for (const yy of [0.38, 0.47, 0.56]) line(ctx, 0.18, yy, 0.82, yy, '#6e5232', 0.02);
+      line(ctx, 0.2, 0.6, 0.8, 0.34, '#5a4128', 0.035);           // the brace
+      for (const px of [0.06, 0.94]) { fillRR(ctx, px - 0.05, 0.18, 0.1, 0.6, 0.02, '#5a4128'); fillRR(ctx, px - 0.028, 0.18, 0.028, 0.6, 0.01, '#846238'); }
+      disc(ctx, 0.76, 0.47, 0.025, '#caa45a');                     // latch
+      ctx.restore();
+      return;
+    }
+    const rail = (x0, y0, x1, y1) => {
+      line(ctx, x0, y0 + 0.03, x1, y1 + 0.03, 'rgba(0,0,0,0.3)', 0.05);
+      line(ctx, x0, y0, x1, y1, '#8a6a42', 0.045);
+    };
+    if (W) { rail(0, 0.4, 0.5, 0.4); rail(0, 0.6, 0.5, 0.6); }
+    if (E) { rail(0.5, 0.4, 1, 0.4); rail(0.5, 0.6, 1, 0.6); }
+    if (N) { rail(0.42, 0, 0.42, 0.5); rail(0.58, 0, 0.58, 0.5); }
+    if (S) { rail(0.42, 0.5, 0.42, 1); rail(0.58, 0.5, 0.58, 1); }
+    if (!(N || S || E || W)) { rail(0.1, 0.4, 0.9, 0.4); rail(0.1, 0.6, 0.9, 0.6); }
+    fillRR(ctx, 0.43, 0.14, 0.14, 0.66, 0.02, 'rgba(0,0,0,0.3)');
+    fillRR(ctx, 0.42, 0.12, 0.14, 0.66, 0.02, '#5a4128');
+    fillRR(ctx, 0.44, 0.12, 0.04, 0.66, 0.01, '#846238');
+  }
+
   drawWall(x, y, ghost) {
     const w = this.game.world, ctx = this.ctx;
     const joins = (dx, dy) => {
@@ -20012,8 +20344,21 @@ class Renderer {
       ctx.strokeRect(ax + 0.5, ay + 0.5, ww, hh);
       ctx.fillStyle = marquee ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.10)';
       ctx.fillRect(ax, ay, ww, hh);
+      // Laying out a pen: the fence and gate it would put down, sized live.
+      const pen = !marquee && this.ghostId === 'pen' ? penLayout(this.game.world, dx0, dy0, dx1, dy1) : null;
+      if (pen && pen.ok) {
+        const w = this.game.world;
+        for (const [px, py] of [...pen.fence, pen.gate]) {
+          const [sx, sy] = this.worldToScreen(px, py);
+          const gate = px === pen.gate[0] && py === pen.gate[1];
+          const fits = w.canPlace(gate ? 'pen_gate' : 'pen', px, py) || PEN_IDS.has(w.buildingAt(px, py)?.id) || WALL_IDS.has(w.buildingAt(px, py)?.id);
+          ctx.fillStyle = !fits ? 'rgba(230,90,80,0.35)' : gate ? 'rgba(238,196,92,0.45)' : 'rgba(170,120,70,0.45)';
+          ctx.fillRect(sx + 2, sy + 2, t - 4, t - 4);
+        }
+      }
       const label = marquee
         ? `${this.dragCount || 0} selected`
+        : pen ? (pen.ok ? `Pen ${cols}×${rowsN} · ${pen.fence.length} posts + gate · ${(pen.fence.length + 1) * (BUILDINGS.pen.cost.wood || 0)} wood` : pen.why)
         : `${cols}×${rowsN}`;
       ctx.font = `12px ${UI_FONT}`;
       ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
@@ -20094,7 +20439,8 @@ function tileThumb(kind, id, px = 64) {
       const walls = new Set();
       if (kind === 'build' && (id === 'wall' || id === 'timber_wall')) { walls.add(X - 1); walls.add(X + 1); }
       if (kind === 'build' && id === 'door') { walls.add(X - 1); walls.add(X + 1); }
-      const wallId = id === 'timber_wall' ? 'timber_wall' : 'wall';
+      if (kind === 'build' && (id === 'pen' || id === 'pen_gate')) { walls.add(X - 1); walls.add(X + 1); }
+      const wallId = id === 'timber_wall' ? 'timber_wall' : id === 'pen' || id === 'pen_gate' ? 'pen' : 'wall';
       const world = {
         buildingAt: (x, y) => (y === Y && x === X && kind === 'build') ? { id, done: true }
           : (y === Y && walls.has(x)) ? { id: wallId, done: true } : null,
@@ -20107,6 +20453,7 @@ function tileThumb(kind, id, px = 64) {
       if (kind === 'floor') fake.drawPlayerFloor(id, X, Y);
       else if (id === 'wall' || id === 'timber_wall') fake.drawWall(X, Y);
       else if (id === 'door') fake.drawDoor(X, Y);
+      else if (id === 'pen' || id === 'pen_gate') fake.drawPen(X, Y);
       else if (ART[id]) ART[id](g, { x: X, y: Y, b: { id, done: true, hp: 100, growth: 1, progress: 0 }, now: 0, first: true });
       else drew = false;
       if (drew) url = cv.toDataURL();
@@ -20649,8 +20996,8 @@ function tipBeast(g, b) {
   let html = tHead(ANIMAL_ICON[b.species] || '🐾', `${b.name} the ${A.name}`,
     `${b.tame ? 'Livestock' : A.wildAggressive ? `<span style="color:${STATUS.critical}">Wild · dangerous</span>` : 'Wild'} · ${b.sex === 'f' ? '♀' : '♂'} ${isMature(b) ? 'adult' : 'young'}`);
   if (b.downed) html += `<div class="tt-task">💤 Down — up again in ${Math.max(1, Math.ceil((b.downed.until - g.tick) / 60))}h</div>`;
-  else if (b.handler) {
-    const h = g.colonists.find(c => c.id === b.handler);
+  else if (b.follow || b.handler) {
+    const h = g.colonists.find(c => c.id === (b.follow || b.handler));
     if (h) html += `<div class="tt-task">🦮 Follows ${tEsc(h.name.short)}${b.heeling ? '' : ' <span>· at the pasture until they head out</span>'}</div>`;
   }
   html += tBar('Health', b.hp / b.maxHp, levelStatus(b.hp / b.maxHp), `${Math.round(b.hp)}/${b.maxHp}`);
@@ -21732,6 +22079,18 @@ class UI {
     const t = this.tool;
     if (this.bandMode()) return 0;
     let n = 0;
+    // A pen is the whole dragged rectangle: fence round it, a gate facing camp.
+    if (t.mode === 'build' && t.id === 'pen') {
+      const L = penLayout(g.world, x0, y0, x1, y1);
+      if (!L.ok) { this.flash(L.why, 'warn'); return 0; }
+      n = this.act(g, 'buildPen', x0, y0, x1, y1) || 0;
+      this.renderer.cacheVersion = -1;
+      if (!n) { this.flash('No room for a pen there', 'warn'); return 0; }
+      this.flash(`Pen laid out: ${L.w}×${L.h}, ${L.fence.length} fence posts and a gate`, 'good');
+      noteTutorialEvent(this.game, 'build:pen');
+      this.setTool({ mode: 'select' }); this.hide('#buildpick');
+      return n;
+    }
     // A building bigger than one tile goes down once, where the drag ended.
     const big = t.mode === 'build' && BUILDINGS[t.id] && BUILDINGS[t.id].size;
     if (big) { x0 = x1; y0 = y1; }
@@ -21763,6 +22122,7 @@ class UI {
     // Only people on this map can be sent anywhere on it.
     const ids = [...this.squad].filter(id => { const c = g.colonists.find(k => k.id === id); return c && (c.mapId || 0) === m.id; });
     const n = ids.length;
+    if (!n && this.beastOrderAt(x, y)) return;
     if (!n) { this.orderInteract(x, y); return; }
     const who = n === 1 ? g.colonists.find(c => c.id === ids[0]).name.short : `${n} people`;
     const opts = [];
@@ -21792,10 +22152,10 @@ class UI {
     const beast = g.beasts.find(b => !b.dead && b.x === x && b.y === y);
     if (beast && beast.tame) {
       const lead = g.colonists.find(c => c.id === ids[0]);
-      if (canFollow(beast)) {
-        const same = beast.handler === lead.id;
+      if (canHeel(beast)) {
+        const same = beast.follow === lead.id || beast.handler === lead.id;
         add('🦮', same ? `${beast.name} stops following ${lead.name.short}` : `${beast.name} follows ${lead.name.short}`, () => {
-          this.act(this.game, 'setHandler', beast.id, same ? null : lead.id);
+          this.act(this.game, 'setFollow', beast.id, same ? null : lead.id);
           this.flash(same ? `${beast.name} no longer follows ${lead.name.short}` : `${beast.name} now follows ${lead.name.short}`, 'good');
           this.sigs.insp = null;
         });
@@ -21829,8 +22189,17 @@ class UI {
         this.flash(`${who}: ${label.toLowerCase()}`, 'good');
       }, 'good');
     }
-    // A shop with an empty counter: put the selected person behind it.
+    // A bed or bedroll: turn in there now.
     const bd = w.inside(x, y) ? w.building[w.idx(x, y)] : null;
+    if (bd && bd.done && BUILDINGS[bd.id].rest) {
+      const bedName = BUILDINGS[bd.id].name.toLowerCase();
+      add('💤', n === 1 ? `Sleep in the ${bedName}` : `Go to bed (${n} people)`, () => {
+        const k = this.act(g, 'orderSleep', ids, x, y);
+        if (!k) { this.flash(`That ${bedName} is taken`, 'warn'); return; }
+        this.flash(n === 1 ? `${who} turns in` : `${k} of ${n} head to bed${k < n ? ' — not enough free beds for the rest' : ''}`, k < n ? 'warn' : 'info');
+      }, 'good');
+    }
+    // A shop with an empty counter: put the selected person behind it.
     if (bd && bd.done && KEPT_SHOPS.has(bd.id) && n === 1) {
       const c = g.colonists.find(k => k.id === ids[0]);
       if (bd.keeper !== c.id) add('🧑‍💼', `${c.name.short} keeps the ${BUILDINGS[bd.id].name}`, () => { assignKeeper(g, bd, c.id); this.sigs.insp = null; this.renderInspector(); }, 'good');
@@ -21841,6 +22210,23 @@ class UI {
     // Plain ground is just a move; anything more gets the menu.
     if (opts.length === 1) { opts[0].run(); return; }
     this.showCtxMenu(opts);
+  }
+
+  /**
+   * A tame beast is selected and the right-click lands on one of our people:
+   * it follows them (or, if it already does, stops). True if that happened.
+   */
+  beastOrderAt(x, y) {
+    const s = this.sel;
+    if (!s || s.kind !== 'beast' || !s.ref || !canHeel(s.ref)) return false;
+    const g = this.mv, b = s.ref;
+    const c = g.here.find(k => !k.dead && !k.away && !k.downed && k.x === x && k.y === y);
+    if (!c) return false;
+    const same = b.follow === c.id;
+    if (!this.act(this.game, 'setFollow', b.id, same ? null : c.id)) { this.flash(`${b.name} won't go to ${c.name.short} from here`, 'warn'); return true; }
+    this.flash(same ? `${b.name} no longer follows ${c.name.short}` : `${b.name} now follows ${c.name.short}`, 'good');
+    this.sigs.insp = null; this.renderInspector();
+    return true;
   }
 
   /** The right-click menu: every way the selection can interact with the tile. */
@@ -24884,6 +25270,33 @@ class UI {
     if (!box.childElementCount) box.appendChild(el('div', 'mini', 'Nothing to order here.'));
   }
 
+  /**
+   * A fighter's stat line, the same for people, monsters and beasts: the six
+   * attributes, what they come to in a fight, and how that measures up against
+   * the strongest of ours (`best` is their power).
+   */
+  statLineHtml(unit, best) {
+    const a = unit.attributes || {}, c = unit.combat || {};
+    const sign = (v) => (v >= 0 ? '+' : '') + v;
+    const pw = powerOf(unit), d = UI.difficulty(pw, best);
+    return `<div class="sect">Stats</div>
+      <div class="attrs">${ATTRS.map(k => `<div data-tipt="${ATTR_NAMES[k]} ${a[k] ?? '—'} (${sign(Math.floor(((a[k] ?? 10) - 10) / 2))})"><span>${k.toUpperCase()}</span><b>${a[k] ?? '—'}</b></div>`).join('')}</div>
+      <div class="row"><span class="k">🎯 To hit</span><span class="v">${sign(c.acc || 0)}</span></div>
+      <div class="row"><span class="k">🗡️ Damage</span><span class="v">${c.dmg ? `${c.dmg[0]}–${c.dmg[1]}${c.dmgBonus ? ' ' + sign(c.dmgBonus) : ''}${(c.multiattack || 1) > 1 ? ` ×${c.multiattack}` : ''}` : '—'}</span></div>
+      <div class="row"><span class="k">🛡️ Armour · defence</span><span class="v">${c.armor ?? 0} · ${c.def ?? 0}</span></div>
+      <div class="row"><span class="k">⚡ Initiative</span><span class="v">${sign(c.init || 0)}</span></div>
+      <div class="row"><span class="k">⚔️ Difficulty</span><span class="v" style="color:${d.color}">${d.name}</span></div>
+      <div class="mini">${best ? `Power ${pw} against your strongest at ${best}.` : `Power ${pw}.`}</div>`;
+  }
+
+  /** How hard a fight a unit of power `pw` is for our strongest (`best`). */
+  static difficulty(pw, best) {
+    const r = best > 0 ? pw / best : 2;
+    return r < 0.5 ? { name: 'Trivial', color: STATUS.good } : r < 0.8 ? { name: 'Easy', color: STATUS.good }
+      : r < 1.15 ? { name: 'Even', color: STATUS.warn } : r < 1.6 ? { name: 'Hard', color: STATUS.bad }
+        : { name: 'Deadly', color: STATUS.critical };
+  }
+
   inspMonster(r, best) {
     const k = bestiaryKnowledge(this.game, r.monsterId);
     this.setTabs([]);
@@ -24894,6 +25307,7 @@ class UI {
         color: powerOf(r) > best ? STATUS.critical : STATUS.good,
         note: powerOf(r) > best ? 'stronger than anyone at home' : `your best fields ${best}`,
       })
+      + this.statLineHtml(r, best)
       + (r.affixes && r.affixes.length ? `<div class="sect">Affixes</div><div class="mini">${r.affixes.map(a => esc(a)).join(' · ')}</div>` : '')
       + `<div class="sect">What we know</div>`
       + (k >= 2 ? combatTraitsHtml(r.combat) : k >= 1 ? combatTraitsHtml({ tags: r.combat.tags }) + '<div class="mini">Weaknesses unknown — slay three to learn them.</div>'
@@ -24971,6 +25385,7 @@ class UI {
         color: powerOf(r) > best ? STATUS.critical : STATUS.good,
         note: powerOf(r) > best ? 'stronger than anyone at home' : `your best fields ${best}`,
       })
+      + this.statLineHtml(r, best)
       + `<div class="sect">Traits</div><div>${kwList('trait', r.traits)}</div>
       <div class="sect">Gear</div>
       <div class="mini">⚔️ ${r.equipment.weapon ? esc(r.equipment.weapon.name) : 'unarmed'} · 🛡️ ${r.equipment.armor ? esc(r.equipment.armor.name) : 'no armour'}</div>`;
@@ -24994,6 +25409,7 @@ class UI {
         label: 'Tame chance', icon: '🤝', frac: tameChance(best, b), color: levelStatus(tameChance(best, b)),
         verdict: pct(tameChance(best, b)), note: `best hand is ${esc(best.name.short)}, Animals ${best.skills.animals || 0}`,
       }) : '')
+      + this.statLineHtml(beastAsCombatant(b), g.colonists.filter(c => !c.away && !c.dead).reduce((m, c) => Math.max(m, powerOf(c)), 0))
       + `<div class="row"><span class="k">⚔️ Combat power</span><span class="v">${beastPower(b)}</span></div>
       ${A.product ? `<div class="row"><span class="k">🥛 ${A.product.label}</span><span class="v">every ${A.product.days}d</span></div>` : ''}
       ${A.pack ? `<div class="row"><span class="k">🎒 Pack capacity</span><span class="v">+${A.pack}</span></div>` : ''}
@@ -25003,6 +25419,16 @@ class UI {
       <div class="sect">Orders</div><div id="beastacts"></div>`;
     const box = body.querySelector('#beastacts');
     if (b.tame) {
+      // Following someone: any tame beast, at their heel wherever they walk.
+      const fol = b.follow != null ? g.colonists.find(c => c.id === b.follow && !c.dead) : null;
+      if (fol) {
+        const row = el('div', 'row');
+        row.innerHTML = `<span class="k">🦮 Following</span><span class="v">${esc(fol.name.short)}</span>`;
+        box.appendChild(row);
+        const stop = el('button', 'act', 'Stop following');
+        stop.onclick = () => { this.act(g, 'setFollow', b.id, null); this.sigs.insp = null; this.renderInspector(); };
+        box.appendChild(stop);
+      } else box.appendChild(el('div', 'mini', 'With this beast selected, right-click one of your people and it follows them.'));
       if (canFollow(b)) {
         // A handler: whoever it follows into the Rift, fights beside and carries for.
         const row = el('label', 'row handler');
@@ -25135,7 +25561,7 @@ class UI {
     {
       for (const id in BUILDINGS) {
         const def = BUILDINGS[id];
-        if (def.cat !== cat || !g.unlocked.has(id)) continue;
+        if (def.cat !== cat || def.hidden || !g.unlocked.has(id)) continue;
         const can = Object.entries(def.cost).every(([k, v]) => (g.resources[k] || 0) >= v);
         gizmos += `<div class="gz${can ? '' : ' cant'}${this.tool.mode === 'build' && this.tool.id === id ? ' on' : ''}" data-build="${id}" data-tip="bld:${id}">
           <span class="gi">${gzPic('build', id)}</span><span class="gl">${esc(def.name)}</span></div>`;
@@ -25146,7 +25572,7 @@ class UI {
       // what it will hold. Clicking one queues the research that unlocks it.
       for (const id in BUILDINGS) {
         const def = BUILDINGS[id];
-        if (def.cat !== cat || g.unlocked.has(id)) continue;
+        if (def.cat !== cat || def.hidden || g.unlocked.has(id)) continue;
         const tech = unlockerOf(id);
         if (!tech) continue;
         gizmos += `<div class="gz locked" data-locked="${id}" data-tech="${tech}">
@@ -25241,6 +25667,7 @@ class UI {
     if (c.role === 'host') return c.host.issue(0, op, mapId, args);
     if (!c.guest.issue(op, mapId, args)) { this.flash('Still syncing with the host…', 'warn'); return null; }
     if (op === 'launchExpedition') return { ok: true, ids: args[1] || [] };
+    if (op === 'orderSleep') return (args[0] || []).length;
     if (op === 'orderRescue' || op === 'orderTame') return this.game.colonists.find(k => (args[0] || []).includes(k.id)) || null;
     const p = COOP_OPS[op];
     return p && typeof p === 'object' ? { ...p } : p;

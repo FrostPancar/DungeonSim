@@ -32,7 +32,7 @@ import { relKind } from './social.js';
 import { partyPower } from './expedition.js';
 import { floorTier } from './floors.js';
 import { PRICES, defenderPower } from './events.js';
-import { ANIMALS, isMature, BEAST_TRAITS, beastPower, tameChance, canFollow, followersOf, PACK_PER_LOAD } from './husbandry.js';
+import { ANIMALS, isMature, BEAST_TRAITS, beastPower, tameChance, canFollow, canHeel, followersOf, PACK_PER_LOAD, beastAsCombatant, penLayout } from './husbandry.js';
 import { CROPS, CROP_IDS, SEASONS, cropViability, growthStage, GROWTH_STAGES } from './farming.js';
 import { BIOMES, SITE_KINDS, WORLD_SHAPES } from './overworld.js';
 import {
@@ -825,6 +825,18 @@ export class UI {
     const t = this.tool;
     if (this.bandMode()) return 0;
     let n = 0;
+    // A pen is the whole dragged rectangle: fence round it, a gate facing camp.
+    if (t.mode === 'build' && t.id === 'pen') {
+      const L = penLayout(g.world, x0, y0, x1, y1);
+      if (!L.ok) { this.flash(L.why, 'warn'); return 0; }
+      n = this.act(g, 'buildPen', x0, y0, x1, y1) || 0;
+      this.renderer.cacheVersion = -1;
+      if (!n) { this.flash('No room for a pen there', 'warn'); return 0; }
+      this.flash(`Pen laid out: ${L.w}×${L.h}, ${L.fence.length} fence posts and a gate`, 'good');
+      noteTutorialEvent(this.game, 'build:pen');
+      this.setTool({ mode: 'select' }); this.hide('#buildpick');
+      return n;
+    }
     // A building bigger than one tile goes down once, where the drag ended.
     const big = t.mode === 'build' && BUILDINGS[t.id] && BUILDINGS[t.id].size;
     if (big) { x0 = x1; y0 = y1; }
@@ -856,6 +868,7 @@ export class UI {
     // Only people on this map can be sent anywhere on it.
     const ids = [...this.squad].filter(id => { const c = g.colonists.find(k => k.id === id); return c && (c.mapId || 0) === m.id; });
     const n = ids.length;
+    if (!n && this.beastOrderAt(x, y)) return;
     if (!n) { this.orderInteract(x, y); return; }
     const who = n === 1 ? g.colonists.find(c => c.id === ids[0]).name.short : `${n} people`;
     const opts = [];
@@ -885,10 +898,10 @@ export class UI {
     const beast = g.beasts.find(b => !b.dead && b.x === x && b.y === y);
     if (beast && beast.tame) {
       const lead = g.colonists.find(c => c.id === ids[0]);
-      if (canFollow(beast)) {
-        const same = beast.handler === lead.id;
+      if (canHeel(beast)) {
+        const same = beast.follow === lead.id || beast.handler === lead.id;
         add('🦮', same ? `${beast.name} stops following ${lead.name.short}` : `${beast.name} follows ${lead.name.short}`, () => {
-          this.act(this.game, 'setHandler', beast.id, same ? null : lead.id);
+          this.act(this.game, 'setFollow', beast.id, same ? null : lead.id);
           this.flash(same ? `${beast.name} no longer follows ${lead.name.short}` : `${beast.name} now follows ${lead.name.short}`, 'good');
           this.sigs.insp = null;
         });
@@ -922,8 +935,17 @@ export class UI {
         this.flash(`${who}: ${label.toLowerCase()}`, 'good');
       }, 'good');
     }
-    // A shop with an empty counter: put the selected person behind it.
+    // A bed or bedroll: turn in there now.
     const bd = w.inside(x, y) ? w.building[w.idx(x, y)] : null;
+    if (bd && bd.done && BUILDINGS[bd.id].rest) {
+      const bedName = BUILDINGS[bd.id].name.toLowerCase();
+      add('💤', n === 1 ? `Sleep in the ${bedName}` : `Go to bed (${n} people)`, () => {
+        const k = this.act(g, 'orderSleep', ids, x, y);
+        if (!k) { this.flash(`That ${bedName} is taken`, 'warn'); return; }
+        this.flash(n === 1 ? `${who} turns in` : `${k} of ${n} head to bed${k < n ? ' — not enough free beds for the rest' : ''}`, k < n ? 'warn' : 'info');
+      }, 'good');
+    }
+    // A shop with an empty counter: put the selected person behind it.
     if (bd && bd.done && KEPT_SHOPS.has(bd.id) && n === 1) {
       const c = g.colonists.find(k => k.id === ids[0]);
       if (bd.keeper !== c.id) add('🧑‍💼', `${c.name.short} keeps the ${BUILDINGS[bd.id].name}`, () => { assignKeeper(g, bd, c.id); this.sigs.insp = null; this.renderInspector(); }, 'good');
@@ -934,6 +956,23 @@ export class UI {
     // Plain ground is just a move; anything more gets the menu.
     if (opts.length === 1) { opts[0].run(); return; }
     this.showCtxMenu(opts);
+  }
+
+  /**
+   * A tame beast is selected and the right-click lands on one of our people:
+   * it follows them (or, if it already does, stops). True if that happened.
+   */
+  beastOrderAt(x, y) {
+    const s = this.sel;
+    if (!s || s.kind !== 'beast' || !s.ref || !canHeel(s.ref)) return false;
+    const g = this.mv, b = s.ref;
+    const c = g.here.find(k => !k.dead && !k.away && !k.downed && k.x === x && k.y === y);
+    if (!c) return false;
+    const same = b.follow === c.id;
+    if (!this.act(this.game, 'setFollow', b.id, same ? null : c.id)) { this.flash(`${b.name} won't go to ${c.name.short} from here`, 'warn'); return true; }
+    this.flash(same ? `${b.name} no longer follows ${c.name.short}` : `${b.name} now follows ${c.name.short}`, 'good');
+    this.sigs.insp = null; this.renderInspector();
+    return true;
   }
 
   /** The right-click menu: every way the selection can interact with the tile. */
@@ -3977,6 +4016,33 @@ export class UI {
     if (!box.childElementCount) box.appendChild(el('div', 'mini', 'Nothing to order here.'));
   }
 
+  /**
+   * A fighter's stat line, the same for people, monsters and beasts: the six
+   * attributes, what they come to in a fight, and how that measures up against
+   * the strongest of ours (`best` is their power).
+   */
+  statLineHtml(unit, best) {
+    const a = unit.attributes || {}, c = unit.combat || {};
+    const sign = (v) => (v >= 0 ? '+' : '') + v;
+    const pw = powerOf(unit), d = UI.difficulty(pw, best);
+    return `<div class="sect">Stats</div>
+      <div class="attrs">${ATTRS.map(k => `<div data-tipt="${ATTR_NAMES[k]} ${a[k] ?? '—'} (${sign(Math.floor(((a[k] ?? 10) - 10) / 2))})"><span>${k.toUpperCase()}</span><b>${a[k] ?? '—'}</b></div>`).join('')}</div>
+      <div class="row"><span class="k">🎯 To hit</span><span class="v">${sign(c.acc || 0)}</span></div>
+      <div class="row"><span class="k">🗡️ Damage</span><span class="v">${c.dmg ? `${c.dmg[0]}–${c.dmg[1]}${c.dmgBonus ? ' ' + sign(c.dmgBonus) : ''}${(c.multiattack || 1) > 1 ? ` ×${c.multiattack}` : ''}` : '—'}</span></div>
+      <div class="row"><span class="k">🛡️ Armour · defence</span><span class="v">${c.armor ?? 0} · ${c.def ?? 0}</span></div>
+      <div class="row"><span class="k">⚡ Initiative</span><span class="v">${sign(c.init || 0)}</span></div>
+      <div class="row"><span class="k">⚔️ Difficulty</span><span class="v" style="color:${d.color}">${d.name}</span></div>
+      <div class="mini">${best ? `Power ${pw} against your strongest at ${best}.` : `Power ${pw}.`}</div>`;
+  }
+
+  /** How hard a fight a unit of power `pw` is for our strongest (`best`). */
+  static difficulty(pw, best) {
+    const r = best > 0 ? pw / best : 2;
+    return r < 0.5 ? { name: 'Trivial', color: STATUS.good } : r < 0.8 ? { name: 'Easy', color: STATUS.good }
+      : r < 1.15 ? { name: 'Even', color: STATUS.warn } : r < 1.6 ? { name: 'Hard', color: STATUS.bad }
+        : { name: 'Deadly', color: STATUS.critical };
+  }
+
   inspMonster(r, best) {
     const k = bestiaryKnowledge(this.game, r.monsterId);
     this.setTabs([]);
@@ -3987,6 +4053,7 @@ export class UI {
         color: powerOf(r) > best ? STATUS.critical : STATUS.good,
         note: powerOf(r) > best ? 'stronger than anyone at home' : `your best fields ${best}`,
       })
+      + this.statLineHtml(r, best)
       + (r.affixes && r.affixes.length ? `<div class="sect">Affixes</div><div class="mini">${r.affixes.map(a => esc(a)).join(' · ')}</div>` : '')
       + `<div class="sect">What we know</div>`
       + (k >= 2 ? combatTraitsHtml(r.combat) : k >= 1 ? combatTraitsHtml({ tags: r.combat.tags }) + '<div class="mini">Weaknesses unknown — slay three to learn them.</div>'
@@ -4064,6 +4131,7 @@ export class UI {
         color: powerOf(r) > best ? STATUS.critical : STATUS.good,
         note: powerOf(r) > best ? 'stronger than anyone at home' : `your best fields ${best}`,
       })
+      + this.statLineHtml(r, best)
       + `<div class="sect">Traits</div><div>${kwList('trait', r.traits)}</div>
       <div class="sect">Gear</div>
       <div class="mini">⚔️ ${r.equipment.weapon ? esc(r.equipment.weapon.name) : 'unarmed'} · 🛡️ ${r.equipment.armor ? esc(r.equipment.armor.name) : 'no armour'}</div>`;
@@ -4087,6 +4155,7 @@ export class UI {
         label: 'Tame chance', icon: '🤝', frac: tameChance(best, b), color: levelStatus(tameChance(best, b)),
         verdict: pct(tameChance(best, b)), note: `best hand is ${esc(best.name.short)}, Animals ${best.skills.animals || 0}`,
       }) : '')
+      + this.statLineHtml(beastAsCombatant(b), g.colonists.filter(c => !c.away && !c.dead).reduce((m, c) => Math.max(m, powerOf(c)), 0))
       + `<div class="row"><span class="k">⚔️ Combat power</span><span class="v">${beastPower(b)}</span></div>
       ${A.product ? `<div class="row"><span class="k">🥛 ${A.product.label}</span><span class="v">every ${A.product.days}d</span></div>` : ''}
       ${A.pack ? `<div class="row"><span class="k">🎒 Pack capacity</span><span class="v">+${A.pack}</span></div>` : ''}
@@ -4096,6 +4165,16 @@ export class UI {
       <div class="sect">Orders</div><div id="beastacts"></div>`;
     const box = body.querySelector('#beastacts');
     if (b.tame) {
+      // Following someone: any tame beast, at their heel wherever they walk.
+      const fol = b.follow != null ? g.colonists.find(c => c.id === b.follow && !c.dead) : null;
+      if (fol) {
+        const row = el('div', 'row');
+        row.innerHTML = `<span class="k">🦮 Following</span><span class="v">${esc(fol.name.short)}</span>`;
+        box.appendChild(row);
+        const stop = el('button', 'act', 'Stop following');
+        stop.onclick = () => { this.act(g, 'setFollow', b.id, null); this.sigs.insp = null; this.renderInspector(); };
+        box.appendChild(stop);
+      } else box.appendChild(el('div', 'mini', 'With this beast selected, right-click one of your people and it follows them.'));
       if (canFollow(b)) {
         // A handler: whoever it follows into the Rift, fights beside and carries for.
         const row = el('label', 'row handler');
@@ -4228,7 +4307,7 @@ export class UI {
     {
       for (const id in BUILDINGS) {
         const def = BUILDINGS[id];
-        if (def.cat !== cat || !g.unlocked.has(id)) continue;
+        if (def.cat !== cat || def.hidden || !g.unlocked.has(id)) continue;
         const can = Object.entries(def.cost).every(([k, v]) => (g.resources[k] || 0) >= v);
         gizmos += `<div class="gz${can ? '' : ' cant'}${this.tool.mode === 'build' && this.tool.id === id ? ' on' : ''}" data-build="${id}" data-tip="bld:${id}">
           <span class="gi">${gzPic('build', id)}</span><span class="gl">${esc(def.name)}</span></div>`;
@@ -4239,7 +4318,7 @@ export class UI {
       // what it will hold. Clicking one queues the research that unlocks it.
       for (const id in BUILDINGS) {
         const def = BUILDINGS[id];
-        if (def.cat !== cat || g.unlocked.has(id)) continue;
+        if (def.cat !== cat || def.hidden || g.unlocked.has(id)) continue;
         const tech = unlockerOf(id);
         if (!tech) continue;
         gizmos += `<div class="gz locked" data-locked="${id}" data-tech="${tech}">
@@ -4334,6 +4413,7 @@ export class UI {
     if (c.role === 'host') return c.host.issue(0, op, mapId, args);
     if (!c.guest.issue(op, mapId, args)) { this.flash('Still syncing with the host…', 'warn'); return null; }
     if (op === 'launchExpedition') return { ok: true, ids: args[1] || [] };
+    if (op === 'orderSleep') return (args[0] || []).length;
     if (op === 'orderRescue' || op === 'orderTame') return this.game.colonists.find(k => (args[0] || []).includes(k.id)) || null;
     const p = COOP_OPS[op];
     return p && typeof p === 'object' ? { ...p } : p;

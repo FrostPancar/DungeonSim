@@ -35,10 +35,10 @@ const COOP_FAR_BEHIND = 2880;          // two days behind: fetch a snapshot rath
  * data: ids, coordinates and strings, never object references.
  */
 export const COOP_OPS = {
-  build: true, designate: true, rush: true,
-  orderMove: true, orderWork: true, orderTravel: true, orderAttack: true,
+  build: true, buildPen: true, designate: true, rush: true,
+  orderMove: true, orderWork: true, orderSleep: 1, orderTravel: true, orderAttack: true,
   orderTame: true, orderRescue: true, orderHunt: true, markButcher: true,
-  setPriority: true, setHandler: true, setCrop: true, cancelTraining: true,
+  setPriority: true, setHandler: true, setFollow: true, setCrop: true, cancelTraining: true,
   setResearch: true, unqueueResearch: true, queueResearch: true, researchPart: null,
   launchExpedition: { ok: true, ids: [] }, choosePrestige: null,
   equip: null, unequip: true, upgradeGear: true, forge: null, craftLegendary: null, brew: null,
@@ -103,6 +103,7 @@ export function applyCoopCommand(game, cmd) {
 export function coopResultMessage(op, r) {
   if (typeof r === 'string') return r || null;
   if (r && typeof r === 'object' && r.ok === false) return r.why || r.msg || r.reason || 'That could not be done.';
+  if (r === 0 && op === 'orderSleep') return 'That bed is taken.';
   if (r === false && ['build', 'orderWork', 'buy', 'sell', 'buyLivestock', 'acceptArrival'].includes(op)) return 'That could not be done.';
   return null;
 }

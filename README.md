@@ -60,7 +60,9 @@ tiles, and a tile holds one body — squads form up around a move order.
 | Select for orders | click a colonist (yellow outline) | tap |
 | Inspect | click a building, tree, rock or creature, or a portrait in the colonist bar (bare ground closes the panel) | tap |
 | Select several | right-drag a box · shift to add · ⌘/ctrl-A for everyone | Squad tool, then drag |
-| Move / interact | right-click a tile: sends the selection there (a dashed line shows the way). On rock, a tree or a blueprint the selection surrounds it and works it together, each extra hand adding speed; on an enemy they close in to fight | — |
+| Move / interact | right-click a tile: sends the selection there (a dashed line shows the way). On rock, a tree or a blueprint the selection surrounds it and works it together, each extra hand adding speed; on an enemy they close in to fight; on a bed or bedroll they go to sleep there (each to their own bed) | — |
+| Beast follows | select a tame beast, then right-click one of your people: it follows them around (right-click them again to stop) | — |
+| Animal pen | Build › Farm › Animal Pen, then drag a rectangle: fence goes round the edge with a gate facing camp (each post costs the same as a timber wall) | — |
 | Area order | pick it in Build, then left-drag | same |
 
 Keys: `space` pause · `1-4` speed · `M` mine · `H` harvest · `X` cancel (orders
@@ -181,6 +183,8 @@ and fails the build on any top-level symbol collision.
 | **Husbandry** | 10 species, taming by skill check, pasture/trough/barn, grazing, breeding with inherited traits, products, butchery |
 | **Delves** | Anyone can go down; packs carry loot out; hurt colonists break for the stairs; every trip is recorded (deepest floor, floors cleared, kills, haul). Permadeath |
 | **Real-time combat** | Fights play out on the map (`src/realtime.js`). Each map keeps a combat field, and every unit acts on its own 6-tick clock through the combat core's own turn. Melee needs an adjacent enemy; bows and spells need 6 tiles and a clear line of sight; rows follow from who stands next to whom; blasts hit within 2 tiles of their target. Colonists close in, focus whatever you right-click, and break for safety under 25% HP. The fallen are downed (they get up later) or die. Turrets shoot from their tiles, a camp alarm rouses everyone when a wave hits, and camp is overrun only if nobody is standing to stop it. You see lunges, shots, floating numbers, telegraph rings and status icons |
+| **Stat lines** | Monsters and beasts roll the same six attributes as people, from a build per family or species (giants strong, goblins quick, oozes slow; direwolves strong, hens not). The attribute a unit strikes with adds to its to-hit and damage, Dexterity to its initiative and defence, Constitution to its health. The inspector shows the line, the combat numbers it adds up to, and a difficulty rating against your strongest fighter |
+| **Pens** | A dragged-out fenced rectangle with one gate. Tame stock with nobody to follow is given a pen with room (a head per 3 tiles inside), walks in through the gate and stays in; beasts following someone leave with them |
 | **Beasts at war** | Give a war or pack beast a handler (inspector, or select someone and right-click the beast): it follows them through the gate and down the stairs, fights beside them, and pack beasts carry for them. War beasts at home turn out against waves |
 | **Combat core** | Front/back rows, 8 damage types with resistances, 40+ statuses, combos, telegraphs and interrupts, poise, creature tags |
 | **Monsters** | 127 monsters in 13 families, 41 encounter templates, elite affixes, drop tables, essences, trophies, a bestiary |

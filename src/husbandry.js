@@ -5,7 +5,8 @@
 // haul capacity, and war beasts join the party in combat — reusing the same
 // combat resolver as every NPC.
 // ============================================================================
-import { clamp } from './rng.js';
+import { clamp, RNG } from './rng.js';
+import { ATTRS, mod } from './data.js';
 import { BIOMES } from './overworld.js';
 import { occupyMove } from './occupancy.js';
 import { huntStep, nearestHostile, ENGAGE } from './realtime.js';
@@ -64,6 +65,49 @@ export function beastIdCounter() { return NEXT_BEAST; }
 
 const BEAST_NAMES = ['Ash', 'Bell', 'Cinder', 'Dun', 'Ember', 'Flint', 'Grit', 'Hazel', 'Juniper', 'Kettle', 'Loam', 'Moss', 'Nettle', 'Onyx', 'Pebble', 'Quill', 'Rust', 'Slate', 'Thistle', 'Umber', 'Vetch', 'Willow'];
 
+// --- stat lines ------------------------------------------------------------------
+// Beasts carry a person's six attributes too, read the same way in a fight
+// (see beastAsCombatant): Strength to hit and damage, Dexterity to act first and
+// dodge, Constitution to health, Wisdom to keep its nerve. Each species has a
+// build — offsets from an ordinary 10 — and each animal rolls a little either
+// side of it. Young inherit the average of their parents.
+export const ANIMAL_BUILDS = {
+  fowl:       { str: -6, dex: 4,  con: -4, int: -8, wis: 2,  cha: -4 },
+  cavegoat:   { str: 1,  dex: 3,  con: 2,  int: -7, wis: 2,  cha: -5 },
+  woolback:   { str: 0,  dex: -1, con: 3,  int: -8, wis: 0,  cha: -4 },
+  boar:       { str: 4,  dex: 0,  con: 4,  int: -8, wis: 0,  cha: -6 },
+  ox:         { str: 6,  dex: -3, con: 6,  int: -8, wis: 0,  cha: -5 },
+  packlizard: { str: 4,  dex: -2, con: 5,  int: -8, wis: 0,  cha: -6 },
+  warhound:   { str: 3,  dex: 4,  con: 2,  int: -6, wis: 3,  cha: -2 },
+  direwolf:   { str: 6,  dex: 4,  con: 4,  int: -5, wis: 3,  cha: -3 },
+  chitinbug:  { str: 2,  dex: -2, con: 5,  int: -9, wis: -2, cha: -8 },
+  duskmoth:   { str: -4, dex: 5,  con: -2, int: -6, wis: 3,  cha: 0 },
+};
+
+function rollBeastAttributes(r, species, parents) {
+  const B = ANIMAL_BUILDS[species] || {};
+  const a = {};
+  for (const k of ATTRS) {
+    const base = parents && parents[0].attributes && parents[1].attributes
+      ? Math.round((parents[0].attributes[k] + parents[1].attributes[k]) / 2) + r.int(-1, 1)
+      : 10 + (B[k] || 0) + r.int(-2, 2);
+    a[k] = clamp(base, 1, 30);
+  }
+  return a;
+}
+
+/** A beast's attributes. A beast from an older save gets its species' build, rolled from its id. */
+export function beastAttributes(b) {
+  if (!b.attributes) b.attributes = rollBeastAttributes(new RNG('attrs:' + b.id), b.species, null);
+  return b.attributes;
+}
+
+/** Full-grown health for this beast at its age: its species, traits and Constitution. */
+function beastHpTarget(b) {
+  const A = ANIMALS[b.species];
+  return Math.max(3, Math.round(A.hp * (1 + beastMod(b, 'hp')) * (1 + 0.05 * mod(beastAttributes(b).con)) * clamp(b.age / A.matureDays, 0.4, 1)));
+}
+
 export function beastMod(beast, key) {
   let v = 0;
   for (const t of beast.traits) { const m = BEAST_TRAITS[t]?.mods?.[key]; if (m) v += m; }
@@ -94,7 +138,9 @@ export function createBeast(rng, species, { tame = false, age = null, parents = 
     pregnant: 0, bonded: null,
     x: 0, y: 0, moveCd: 0, dead: false, away: false,
   };
-  beast.maxHp = Math.max(3, Math.round(A.hp * (1 + beastMod(beast, 'hp')) * clamp(beast.age / A.matureDays, 0.4, 1)));
+  // Its own stream, so rolling stats never shifts the world's.
+  beast.attributes = rollBeastAttributes(rng.fork('attrs:' + beast.id), species, parents);
+  beast.maxHp = beastHpTarget(beast);
   beast.hp = beast.maxHp;
   return beast;
 }
@@ -113,20 +159,21 @@ export function tameDC(b) { return ANIMALS[b.species].tameDC + beastMod(b, 'tame
 export function beastAsCombatant(b) {
   const A = ANIMALS[b.species];
   const pw = beastPower(b);
+  const at = beastAttributes(b), str = mod(at.str), dex = mod(at.dex);
   return {
     id: b.id, beast: b,
     name: { short: b.name, full: `${b.name} the ${A.name}` },
     race: 'beast', klass: 'brute', level: Math.max(1, Math.round(b.age / 4)),
     hp: b.hp, maxHp: b.maxHp, traits: [], injuries: [], skills: {}, abilities: [],
-    attributes: { str: 12, dex: 12, con: 12, int: 3, wis: 10, cha: 5 },
+    attributes: { ...at },
     equipment: { weapon: null, armor: null },
     hostility: 20, thoughts: [], relations: {}, xp: {}, passions: {},
     combat: {
-      stat: 'melee', acc: 3 + Math.round(pw * 0.45), dmg: [Math.max(1, Math.round(pw * 0.55)), Math.max(2, Math.round(pw * 1.25))],
-      dmgBonus: Math.round(pw * 0.25), armor: A.armor + Math.round(beastMod(b, 'hp') * 2),
-      init: 3, mult: 1, leech: 0, role: 'front', flee: 0.22,
+      stat: 'melee', acc: 3 + Math.round(pw * 0.45) + str, dmg: [Math.max(1, Math.round(pw * 0.55)), Math.max(2, Math.round(pw * 1.25))],
+      dmgBonus: Math.round(pw * 0.25) + str, armor: A.armor + Math.round(beastMod(b, 'hp') * 2),
+      init: 3 + dex, mult: 1, leech: 0, role: 'front', flee: clamp(0.22 - mod(at.wis) * 0.03, 0.02, 0.5),
       row: 'front', range: 'melee', dmgType: 'slash', tags: ['beast'], res: {}, immune: [], resist: {}, poise: 0,
-      def: Math.round((A.armor + Math.round(beastMod(b, 'hp') * 2)) * 0.7),
+      def: Math.round((A.armor + Math.round(beastMod(b, 'hp') * 2)) * 0.7) + Math.floor(dex / 2),
     },
   };
 }
@@ -183,6 +230,9 @@ export function tickBeasts(game) {
   const forageScale = (game.seasonDef ? game.seasonDef.forage : 1) * (BIOMES[game.biome] ? BIOMES[game.biome].forage : 0.8);
   const pastures = world.findBuildings('pasture');
   const troughs = world.findBuildings('trough');
+  const pens = livePens(world);
+  const headcount = new Map();
+  for (const b of game.beasts) if (b.tame && !b.dead && b.pen != null) headcount.set(b.pen, (headcount.get(b.pen) || 0) + 1);
 
   for (let i = game.beasts.length - 1; i >= 0; i--) {
     const b = game.beasts[i];
@@ -192,7 +242,7 @@ export function tickBeasts(game) {
     b.age += dt;
 
     // Growth toward adult size.
-    const target = Math.max(3, Math.round(A.hp * (1 + beastMod(b, 'hp')) * clamp(b.age / A.matureDays, 0.4, 1)));
+    const target = beastHpTarget(b);
     if (target > b.maxHp) { b.maxHp = target; b.hp = Math.min(target, b.hp + (target - b.maxHp) + 1); }
 
     // Feeding. Wild animals forage freely; tame ones need pasture or a trough.
@@ -204,7 +254,8 @@ export function tickBeasts(game) {
       const grazed = grazeAt(world, b.x, b.y, forageScale);
       // Below, there's no trough: what moss and fungus the floor grows, thin as it is.
       if (game._m && game._m.kind === 'floor') { b.hunger = clamp(b.hunger + Math.max(0.3, grazed) * dt * 0.8 - need, 0, 1); fed = true; }
-      if (!fed && grazed > 0.15 && pastures.length) { b.hunger = clamp(b.hunger + grazed * dt * 0.8 - need, 0, 1); fed = true; }
+      const penned = b.pen != null && pens.some(p => p.id === b.pen && penInside(p, b.x, b.y));
+      if (!fed && grazed > 0.15 && (pastures.length || penned)) { b.hunger = clamp(b.hunger + grazed * dt * 0.8 - need, 0, 1); fed = true; }
       if (!fed || b.hunger < 0.55) {
         // Eat from the stores — fungus-eaters are cheap to keep.
         const src = A.eatsFungus ? 'food' : 'food';
@@ -263,6 +314,23 @@ export function tickBeasts(game) {
     // at its handler's heel (or down) is moved by tickFollowers instead.
     if (b.heeling || b.downed) continue;
     b.moveCd -= 1;
+    // Penned stock: walk home through the gate, then keep to the ground inside.
+    const pen = b.tame && pens.length && (!game._m || game._m.kind === 'camp') ? penOf(world, b, pens, headcount) : null;
+    if (pen && b.moveCd <= 0) {
+      if (penInside(pen, b.x, b.y)) {
+        b.moveCd = rng.int(2, 5);
+        const ax = b.x + rng.int(-1, 1), ay = b.y + rng.int(-1, 1);
+        if (penInside(pen, ax, ay) && world.walkable(ax, ay)) occupyMove(game, b, ax, ay);
+      } else {
+        // Beasts think every BEAST_TICK ticks, so a walk home takes a few strides at once.
+        b.moveCd = 1;
+        for (let k = 0; k < 4 && !penInside(pen, b.x, b.y); k++) {
+          if (!huntStep(game, b, (pen.x0 + pen.x1) >> 1, (pen.y0 + pen.y1) >> 1, false)) { b.moveCd = 3; break; }
+        }
+      }
+      continue;
+    }
+    if (pen) continue;
     if (b.moveCd <= 0) {
       b.moveCd = rng.int(2, 5);
       let ax = b.x, ay = b.y;
@@ -290,9 +358,75 @@ export function grazeAt(world, x, y, scale) {
 }
 
 export function herdCap(game) {
-  const pens = game.world.findBuildings('pasture').length;
+  const posts = game.world.findBuildings('pasture').length;
   const barns = game.world.findBuildings('barn').length;
-  return pens * 4 + barns * 8;
+  let penRoom = 0;
+  for (const p of livePens(game.world)) if (penReady(game.world, p)) penRoom += penCapacity(p);
+  return posts * 4 + barns * 8 + penRoom;
+}
+
+// --- pens ---------------------------------------------------------------------
+// A pen is a fenced rectangle the player drags out: fence round the edge and one
+// gate. Its record lives on the world (`world.pens`), so it saves with the map.
+// Tame stock with no one to follow is given a pen with room, walks in through
+// the gate, and then wanders only inside it — the gate lets people and led
+// beasts through, but loose stock never picks its way out.
+export const PEN_MIN = 3, PEN_MAX = 24;
+
+/** Is (x, y) inside pen `p`, not on its fence? */
+export const penInside = (p, x, y) => x > p.x0 && x < p.x1 && y > p.y0 && y < p.y1;
+/** How many head a pen holds: one per three tiles of ground inside, at least two. */
+export function penCapacity(p) { return Math.max(2, Math.floor((p.x1 - p.x0 - 1) * (p.y1 - p.y0 - 1) / 3)); }
+
+/**
+ * The fence and gate for the rectangle (x0, y0)–(x1, y1), in either corner
+ * order. The gate goes in the middle of the side nearest camp, or the next
+ * nearest side if something's in the way. `canPlace(id, x, y)` is the world's.
+ */
+export function penLayout(world, x0, y0, x1, y1) {
+  const ax = Math.min(x0, x1), bx = Math.max(x0, x1), ay = Math.min(y0, y1), by = Math.max(y0, y1);
+  const w = bx - ax + 1, h = by - ay + 1;
+  const out = { ok: false, x0: ax, y0: ay, x1: bx, y1: by, w, h, fence: [], gate: null, why: '' };
+  if (w < PEN_MIN || h < PEN_MIN) { out.why = `A pen needs at least ${PEN_MIN}×${PEN_MIN} tiles.`; return out; }
+  if (w > PEN_MAX || h > PEN_MAX) { out.why = `A pen can be at most ${PEN_MAX}×${PEN_MAX} tiles.`; return out; }
+  const mx = (ax + bx) >> 1, my = (ay + by) >> 1;
+  const st = world.start || { x: mx, y: by + 5 };
+  const sides = [[mx, by], [mx, ay], [ax, my], [bx, my]]
+    .map(([x, y], k) => ({ x, y, k, d: Math.hypot(x - st.x, y - st.y) }))
+    .sort((a, b) => a.d - b.d || a.k - b.k);
+  const gate = sides.find(g => world.canPlace('pen_gate', g.x, g.y)) || sides[0];
+  out.gate = [gate.x, gate.y];
+  for (let x = ax; x <= bx; x++) for (const y of [ay, by]) if (!(x === gate.x && y === gate.y)) out.fence.push([x, y]);
+  for (let y = ay + 1; y < by; y++) for (const x of [ax, bx]) if (!(x === gate.x && y === gate.y)) out.fence.push([x, y]);
+  out.ok = true;
+  return out;
+}
+
+/** The pens still standing: a pen whose gate is gone is forgotten. */
+export function livePens(world) {
+  const ps = world.pens;
+  if (!ps || !ps.length) return [];
+  const gone = (p) => { const b = world.buildingAt(p.gate[0], p.gate[1]); return !b || b.id !== 'pen_gate'; };
+  if (ps.some(gone)) world.pens = ps.filter(p => !gone(p));
+  return world.pens;
+}
+/** A pen can take stock once its gate is built. */
+export function penReady(world, p) { const b = world.buildingAt(p.gate[0], p.gate[1]); return !!(b && b.done && b.id === 'pen_gate'); }
+
+/** The pen a tame beast lives in: its own if it still stands, else the nearest with room. */
+function penOf(world, b, pens, headcount) {
+  let p = b.pen != null ? pens.find(q => q.id === b.pen) : null;
+  if (p && penReady(world, p)) return p;
+  if (p) headcount.set(p.id, (headcount.get(p.id) || 1) - 1);
+  b.pen = null;
+  let best = null, bd = Infinity;
+  for (const q of pens) {
+    if (!penReady(world, q) || (headcount.get(q.id) || 0) >= penCapacity(q)) continue;
+    const d = Math.hypot((q.x0 + q.x1) / 2 - b.x, (q.y0 + q.y1) / 2 - b.y);
+    if (d < bd) { bd = d; best = q; }
+  }
+  if (best) { b.pen = best.id; headcount.set(best.id, (headcount.get(best.id) || 0) + 1); }
+  return best;
 }
 
 export function tameChance(colonist, beast) {
@@ -320,6 +454,10 @@ export function packCapacity(beasts) {
 // stairs when they do, fights beside them and carries for them. At home it
 // goes back to the pasture. War beasts at home also turn out when something
 // hostile comes near the camp.
+//
+// Any tame beast can also be told to follow someone (`b.follow`): it then keeps
+// to their heel wherever they walk on its map, camp included, until told to
+// stop. Only a war or pack beast whose handler it is follows them down the stairs.
 
 /** Extra pack room a pack beast gives the handler it follows, per load. */
 export const PACK_PER_LOAD = 25;
@@ -334,9 +472,12 @@ export function leading(c) {
 /** The beasts that follow `c`, on whatever map they are. */
 export function followersOf(game, c) {
   const out = [];
-  for (const m of game.maps) for (const b of m.beasts) if (b.tame && !b.dead && b.handler === c.id) out.push(b);
+  for (const m of game.maps) for (const b of m.beasts) if (b.tame && !b.dead && (b.handler === c.id || b.follow === c.id)) out.push(b);
   return out;
 }
+
+/** Can this beast be told to follow someone around? Any tame one can. */
+export function canHeel(b) { return !!(b && b.tame && !b.dead); }
 
 /** Can this beast be given a handler at all? */
 export function canFollow(b) {
@@ -398,17 +539,22 @@ export function tickFollowers(v) {
     }
     const A = ANIMALS[b.species];
     let leader = null;
-    if (b.handler) {
-      leader = root.colonists.find(c => c.id === b.handler) || null;
+    const leadId = b.follow || b.handler;
+    if (leadId) {
+      leader = root.colonists.find(c => c.id === leadId) || null;
       if (!leader || leader.dead) {
-        b.handler = null; leader = null;
-        root.log(`${b.name} the ${A.name} has lost its handler.`, 'warn');
+        b.handler = null; b.follow = null; leader = null;
+        root.log(`${b.name} the ${A.name} has lost the one it followed.`, 'warn');
       }
     }
     const lm = leader ? (leader.mapId || 0) : 0;
-    const follow = !!leader && lm === m.id && leading(leader);
+    // Told to follow: at their heel wherever they are on this map. A handler
+    // alone: only once they're heading out.
+    const follow = !!leader && lm === m.id && (b.follow === leader.id || leading(leader));
     // Somewhere else to be: its handler went on without it, or it's alone below.
-    const astray = leader ? lm !== m.id && (leading(leader) || m.kind === 'floor') : m.kind === 'floor';
+    // Only a handler's beast takes the stairs after them.
+    const crosses = !!leader && b.handler === leader.id;
+    const astray = crosses ? lm !== m.id && (leading(leader) || m.kind === 'floor') : m.kind === 'floor';
     if (follow && A.pack) leader.packBonus = (leader.packBonus || 0) + A.pack * PACK_PER_LOAD;
 
     // What it's going for, if anything.

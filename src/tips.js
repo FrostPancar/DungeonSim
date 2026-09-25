@@ -210,8 +210,8 @@ function tipBeast(g, b) {
   let html = tHead(ANIMAL_ICON[b.species] || '🐾', `${b.name} the ${A.name}`,
     `${b.tame ? 'Livestock' : A.wildAggressive ? `<span style="color:${STATUS.critical}">Wild · dangerous</span>` : 'Wild'} · ${b.sex === 'f' ? '♀' : '♂'} ${isMature(b) ? 'adult' : 'young'}`);
   if (b.downed) html += `<div class="tt-task">💤 Down — up again in ${Math.max(1, Math.ceil((b.downed.until - g.tick) / 60))}h</div>`;
-  else if (b.handler) {
-    const h = g.colonists.find(c => c.id === b.handler);
+  else if (b.follow || b.handler) {
+    const h = g.colonists.find(c => c.id === (b.follow || b.handler));
     if (h) html += `<div class="tt-task">🦮 Follows ${tEsc(h.name.short)}${b.heeling ? '' : ' <span>· at the pasture until they head out</span>'}</div>`;
   }
   html += tBar('Health', b.hp / b.maxHp, levelStatus(b.hp / b.maxHp), `${Math.round(b.hp)}/${b.maxHp}`);

@@ -20,7 +20,7 @@
 // ============================================================================
 import { TERRAIN, FEATURES, T, anchorFor } from './world.js';
 import { BUILDINGS, FLOORS, RACES } from './data.js';
-import { ANIMALS } from './husbandry.js';
+import { ANIMALS, penLayout } from './husbandry.js';
 import { BIOMES, SITE_KINDS } from './overworld.js';
 import { siteErrand } from './economy.js';
 import { CROPS, growthStage } from './farming.js';
@@ -1000,6 +1000,7 @@ const FLOOR = {
   dark:   { base: '#553a28', seam: 'rgba(20,10,4,0.6)',   hi: 'rgba(255,210,160,0.06)', w: 0.2 },
 };
 const WALL_IDS = new Set(['wall', 'timber_wall', 'door']);
+const PEN_IDS = new Set(['pen', 'pen_gate']);
 const WALL_PAL = {
   stone:  { top: '#8f897d', face: '#4a4640', seam: 'rgba(40,36,30,0.45)' },
   timber: { top: '#8a653d', face: '#4a3220', seam: 'rgba(40,22,10,0.55)' },
@@ -2188,6 +2189,7 @@ export class Renderer {
       this.tileSpace(sx, sy);
       if (b.id === 'wall' || b.id === 'timber_wall') { this.drawWall(x, y); continue; }
       if (b.id === 'door') { this.drawDoor(x, y); continue; }
+      if (PEN_IDS.has(b.id)) { this.drawPen(x, y); continue; }
       const sid = S.of[i];
       const s = sid >= 0 ? S.list[sid] : null;
       const o = { x, y, b, now, first: s ? s.tiles[0] === i : true };
@@ -2227,10 +2229,11 @@ export class Renderer {
       this.tileSpace(sx, sy);
       ctx.fillStyle = 'rgba(90,170,220,0.16)';
       ctx.fillRect(0.03, 0.03, 0.94, 0.94);
-      const art = ART[b.id] || (b.id === 'timber_wall' ? ART.fence : null);
+      const art = ART[b.id] || (b.id === 'timber_wall' ? ART.fence : null) || (PEN_IDS.has(b.id) ? ART.fence : null);
       if (art) {
         ctx.save(); ctx.globalAlpha = 0.4;
         if (b.id === 'wall' || b.id === 'timber_wall') this.drawWall(x, y, true);
+        else if (PEN_IDS.has(b.id)) this.drawPen(x, y, true);
         else art(ctx, { x, y, b, now, first: true });
         ctx.restore();
       }
@@ -2506,6 +2509,43 @@ export class Renderer {
   }
 
   /** Walls connect to walls and doors next to them; stone blocks with a face. */
+  /**
+   * A pen's fence: a post on every tile and rails to whichever neighbours are
+   * pen too, so corners turn and long sides run unbroken. The gate is a plank
+   * door hung between two posts, across the line the fence runs along.
+   */
+  drawPen(x, y, ghost) {
+    const w = this.game.world, ctx = this.ctx;
+    const me = w.buildingAt(x, y);
+    const joins = (dx, dy) => { const b = w.buildingAt(x + dx, y + dy); return !!b && (PEN_IDS.has(b.id) || b.id === 'fence' || WALL_IDS.has(b.id)) && (b.done || ghost); };
+    const N = joins(0, -1), S = joins(0, 1), E = joins(1, 0), W = joins(-1, 0);
+    if (me && me.id === 'pen_gate') {
+      const across = E || W || !(N || S);     // the fence runs east–west through it
+      ctx.save();
+      if (!across) { ctx.translate(0.5, 0.5); ctx.rotate(Math.PI / 2); ctx.translate(-0.5, -0.5); }
+      line(ctx, 0.14, 0.64, 0.86, 0.64, 'rgba(0,0,0,0.3)', 0.06);
+      fillRR(ctx, 0.16, 0.3, 0.68, 0.34, 0.03, '#8a6a42');
+      for (const yy of [0.38, 0.47, 0.56]) line(ctx, 0.18, yy, 0.82, yy, '#6e5232', 0.02);
+      line(ctx, 0.2, 0.6, 0.8, 0.34, '#5a4128', 0.035);           // the brace
+      for (const px of [0.06, 0.94]) { fillRR(ctx, px - 0.05, 0.18, 0.1, 0.6, 0.02, '#5a4128'); fillRR(ctx, px - 0.028, 0.18, 0.028, 0.6, 0.01, '#846238'); }
+      disc(ctx, 0.76, 0.47, 0.025, '#caa45a');                     // latch
+      ctx.restore();
+      return;
+    }
+    const rail = (x0, y0, x1, y1) => {
+      line(ctx, x0, y0 + 0.03, x1, y1 + 0.03, 'rgba(0,0,0,0.3)', 0.05);
+      line(ctx, x0, y0, x1, y1, '#8a6a42', 0.045);
+    };
+    if (W) { rail(0, 0.4, 0.5, 0.4); rail(0, 0.6, 0.5, 0.6); }
+    if (E) { rail(0.5, 0.4, 1, 0.4); rail(0.5, 0.6, 1, 0.6); }
+    if (N) { rail(0.42, 0, 0.42, 0.5); rail(0.58, 0, 0.58, 0.5); }
+    if (S) { rail(0.42, 0.5, 0.42, 1); rail(0.58, 0.5, 0.58, 1); }
+    if (!(N || S || E || W)) { rail(0.1, 0.4, 0.9, 0.4); rail(0.1, 0.6, 0.9, 0.6); }
+    fillRR(ctx, 0.43, 0.14, 0.14, 0.66, 0.02, 'rgba(0,0,0,0.3)');
+    fillRR(ctx, 0.42, 0.12, 0.14, 0.66, 0.02, '#5a4128');
+    fillRR(ctx, 0.44, 0.12, 0.04, 0.66, 0.01, '#846238');
+  }
+
   drawWall(x, y, ghost) {
     const w = this.game.world, ctx = this.ctx;
     const joins = (dx, dy) => {
@@ -3203,8 +3243,21 @@ export class Renderer {
       ctx.strokeRect(ax + 0.5, ay + 0.5, ww, hh);
       ctx.fillStyle = marquee ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.10)';
       ctx.fillRect(ax, ay, ww, hh);
+      // Laying out a pen: the fence and gate it would put down, sized live.
+      const pen = !marquee && this.ghostId === 'pen' ? penLayout(this.game.world, dx0, dy0, dx1, dy1) : null;
+      if (pen && pen.ok) {
+        const w = this.game.world;
+        for (const [px, py] of [...pen.fence, pen.gate]) {
+          const [sx, sy] = this.worldToScreen(px, py);
+          const gate = px === pen.gate[0] && py === pen.gate[1];
+          const fits = w.canPlace(gate ? 'pen_gate' : 'pen', px, py) || PEN_IDS.has(w.buildingAt(px, py)?.id) || WALL_IDS.has(w.buildingAt(px, py)?.id);
+          ctx.fillStyle = !fits ? 'rgba(230,90,80,0.35)' : gate ? 'rgba(238,196,92,0.45)' : 'rgba(170,120,70,0.45)';
+          ctx.fillRect(sx + 2, sy + 2, t - 4, t - 4);
+        }
+      }
       const label = marquee
         ? `${this.dragCount || 0} selected`
+        : pen ? (pen.ok ? `Pen ${cols}×${rowsN} · ${pen.fence.length} posts + gate · ${(pen.fence.length + 1) * (BUILDINGS.pen.cost.wood || 0)} wood` : pen.why)
         : `${cols}×${rowsN}`;
       ctx.font = `12px ${UI_FONT}`;
       ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
@@ -3285,7 +3338,8 @@ export function tileThumb(kind, id, px = 64) {
       const walls = new Set();
       if (kind === 'build' && (id === 'wall' || id === 'timber_wall')) { walls.add(X - 1); walls.add(X + 1); }
       if (kind === 'build' && id === 'door') { walls.add(X - 1); walls.add(X + 1); }
-      const wallId = id === 'timber_wall' ? 'timber_wall' : 'wall';
+      if (kind === 'build' && (id === 'pen' || id === 'pen_gate')) { walls.add(X - 1); walls.add(X + 1); }
+      const wallId = id === 'timber_wall' ? 'timber_wall' : id === 'pen' || id === 'pen_gate' ? 'pen' : 'wall';
       const world = {
         buildingAt: (x, y) => (y === Y && x === X && kind === 'build') ? { id, done: true }
           : (y === Y && walls.has(x)) ? { id: wallId, done: true } : null,
@@ -3298,6 +3352,7 @@ export function tileThumb(kind, id, px = 64) {
       if (kind === 'floor') fake.drawPlayerFloor(id, X, Y);
       else if (id === 'wall' || id === 'timber_wall') fake.drawWall(X, Y);
       else if (id === 'door') fake.drawDoor(X, Y);
+      else if (id === 'pen' || id === 'pen_gate') fake.drawPen(X, Y);
       else if (ART[id]) ART[id](g, { x: X, y: Y, b: { id, done: true, hp: 100, growth: 1, progress: 0 }, now: 0, first: true });
       else drew = false;
       if (drew) url = cv.toDataURL();

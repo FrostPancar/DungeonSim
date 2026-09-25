@@ -7,7 +7,7 @@
 // ============================================================================
 import { RNG } from '../src/rng.js';
 import {
-  TRAITS, RACES, CLASSES, SKILL_IDS, RESOURCE_IDS, BUILDINGS, FLOORS, RESEARCH, dispositionOf, FACTIONS,
+  ATTRS, TRAITS, RACES, CLASSES, SKILL_IDS, RESOURCE_IDS, BUILDINGS, FLOORS, RESEARCH, dispositionOf, FACTIONS,
 } from '../src/data.js';
 import { World, findPath, findNearest, TERRAIN, FEATURES, T } from '../src/world.js';
 import { generateNPC, generateGroup, powerOf, resetIds, shiftHostility, refresh as refreshNPC } from '../src/npc.js';
@@ -28,14 +28,14 @@ import { PRESTIGE_PATHS, PRESTIGE_TIERS } from '../src/prestige.js';
 import { GENERAL_IDS, spellBudget, bookRequirement } from '../src/magic.js';
 import { tiersOf, changeClass } from '../src/classes.js';
 import { TREES, TREE_CLASSES, CLASS_INFO, PRESTIGE, treeNodes, canBuy, buyNode, toggleLoadout, pointsFree, pointsEarned, effectiveAbility, autoAllocate, gainLevelXp, xpToNext, LOADOUT_SLOTS, TIER_CAP, LEVEL_CAP } from '../src/classes.js';
-import { MONSTERS, MONSTER_IDS, FAMILIES, ENCOUNTERS, ENCOUNTER_IDS, RANKS, rankIdx, tierRank, createMonster, buildEncounter, monsterWave, rollMonsterDrops, templatesFor, ESSENCES, TROPHIES } from '../src/monsters.js';
+import { FAMILY_BUILDS, monsterStrikeAttr, MONSTERS, MONSTER_IDS, FAMILIES, ENCOUNTERS, ENCOUNTER_IDS, RANKS, rankIdx, tierRank, createMonster, buildEncounter, monsterWave, rollMonsterDrops, templatesFor, ESSENCES, TROPHIES } from '../src/monsters.js';
 import { Game, DUSK_HOUR, DAWN_HOUR, RIFT_DAYS_PER_LEVEL, riftTargetDanger } from '../src/game.js';
 import { autoplayStep } from '../src/autoplay.js';
 import { TICKS_PER_DAY, TICKS_PER_HOUR, storageCap } from '../src/colony.js';
 import { Overworld, BIOMES, SITE_KINDS, classify } from '../src/overworld.js';
 import { CROPS, CROP_IDS, SEASONS, cropViability, recommendCrop, seasonOf, yearOf, growthStage, initSoil } from '../src/farming.js';
 import { packCap } from '../src/colony.js';
-import { ANIMALS, ANIMAL_IDS, createBeast, beastAsCombatant, beastPower, biomeSpecies, tameChance, butcherBeast, isMature, resetBeastIds, PACK_PER_LOAD, followersOf } from '../src/husbandry.js';
+import { ANIMAL_BUILDS, beastAttributes, penLayout, penCapacity, herdCap, ANIMALS, ANIMAL_IDS, createBeast, beastAsCombatant, beastPower, biomeSpecies, tameChance, butcherBeast, isMature, resetBeastIds, PACK_PER_LOAD, followersOf } from '../src/husbandry.js';
 import { PX, pxOf } from '../src/pixicons.js';
 import * as ECON from '../src/economy.js';
 import { makeTierItem } from '../src/items.js';
@@ -2414,6 +2414,110 @@ describe('Onboarding & legibility', () => {
     const src = readFileSync(fileURLToPath(new URL('../src/' + f, import.meta.url)), 'utf8');
     ok(!/TRAITS\[t\]\.name/.test(src), `${f} draws traits through kw(), not by name`);
   }
+});
+
+describe('Sleep orders, beasts that follow, pens and stat lines', () => {
+  // Somewhere clear near camp, with room for a w×h block.
+  const clearSpot = (g, w, h, from = 3) => {
+    const W = g.world, s0 = W.start;
+    for (let r = from; r < 30; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      const x0 = s0.x + dx, y0 = s0.y + dy;
+      let ok2 = true;
+      for (let y = y0; y < y0 + h && ok2; y++) for (let x = x0; x < x0 + w && ok2; x++) ok2 = W.inside(x, y) && W.walkable(x, y) && !W.building[W.idx(x, y)] && !W.feature[W.idx(x, y)] && !g.colonists.some(c => c.x === x && c.y === y);
+      if (ok2) return [x0, y0];
+    }
+    return null;
+  };
+  const finishAll = (g) => { const W = g.world; for (const b of W.building) if (b && !b.done) { b.done = true; b.workLeft = 0; } W.touch(); g.jobsDirty = true; };
+
+  // --- sleep ---
+  const gs = new Game('sleep-order');
+  const [bx, by] = clearSpot(gs, 1, 1, 4);
+  gs.world.putBuilding('bed', bx, by, { id: 'bed', done: true, workLeft: 0, hp: 120, growth: 0, progress: 0, reservedBy: 0 });
+  gs.world.touch();
+  const sleeper = gs.colonists.find(c => !c.away && !c.dead);
+  sleeper.needs.rest = 1; sleeper.needs.hunger = 1;
+  const other = gs.colonists.find(c => c !== sleeper && !c.away && !c.dead);
+  const both = gs.orderSleep([sleeper.id, other.id], bx, by);
+  const beds = [sleeper, other].filter(c => c.order && c.order.sleep).map(c => c.order.x + ',' + c.order.y);
+  ok(both >= 1 && new Set(beds).size === both && beds.includes(bx + ',' + by), 'a sleep order gives each person their own bed, the clicked one first', beds.join(' '));
+  ok(gs.orderSleep([sleeper.id], bx, by) === 1 && sleeper.order.x === bx && sleeper.order.y === by, 'one person sent to a bed takes that bed');
+  ok(gs.orderSleep([sleeper.id], bx + 40, by) === 0, 'there is nothing to sleep in on bare ground');
+  let asleepAt = -1;
+  for (let i = 0; i < 900 && asleepAt < 0; i++) { gs.step(); if (sleeper.state === 'sleeping' && sleeper.x === bx && sleeper.y === by) asleepAt = gs.tick; }
+  ok(asleepAt > 0, 'the ordered colonist walks to the bed and lies down', `tick ${asleepAt}`);
+  let stayed = 0;
+  for (let i = 0; i < 90; i++) { gs.step(); if (sleeper.state === 'sleeping') stayed++; }
+  ok(stayed >= 80 && !sleeper.order, 'rested or not, they sleep a couple of hours once sent, and the order is spent', `${stayed}/90 ticks asleep`);
+
+  // --- follow ---
+  const gf = new Game('beast-follow');
+  const lead = gf.colonists.find(c => !c.away && !c.dead);
+  const hen = createBeast(gf.rng.fork('hen'), 'fowl', { tame: true });
+  const [hx, hy] = clearSpot(gf, 1, 1, 3);
+  hen.x = hx; hen.y = hy; gf.beasts.push(hen);
+  ok(!gf.setHandler(hen.id, lead.id) && gf.setFollow(hen.id, lead.id), 'a hen cannot be a delve handler’s beast, but can be told to follow someone');
+  ok(followersOf(gf, lead).includes(hen), 'and it counts among their followers');
+  const [tx, ty] = clearSpot(gf, 1, 1, 12);
+  gf.orderMove([lead.id], tx, ty);
+  for (let i = 0; i < 700; i++) gf.step();
+  const dist = Math.max(Math.abs(hen.x - lead.x), Math.abs(hen.y - lead.y));
+  ok(dist <= 3, 'it keeps to their heel as they walk across camp', `${dist} tiles apart`);
+  ok(gf.setFollow(hen.id, null) && hen.follow == null, 'and stops when told');
+
+  // --- pens ---
+  const gp = new Game('pen-build');
+  gp.unlocked.add('pen'); gp.unlocked.add('pen_gate');
+  ok(!penLayout(gp.world, 0, 0, 1, 1).ok, 'a pen needs at least 3×3');
+  const [px, py] = clearSpot(gp, 7, 6, 6);
+  const L = penLayout(gp.world, px, py, px + 6, py + 5);
+  ok(L.ok && L.fence.length === 2 * 7 + 2 * 4 - 1, 'a 7×6 pen is 21 fence posts and a gate', `${L.fence.length}`);
+  ok((L.gate[0] === px || L.gate[0] === px + 6 || L.gate[1] === py || L.gate[1] === py + 5) && !L.fence.some(([x, y]) => x > px && x < px + 6 && y > py && y < py + 5), 'fence and gate sit on the edge only, never inside');
+  ok(BUILDINGS.pen.cost.wood === BUILDINGS.timber_wall.cost.wood && BUILDINGS.pen_gate.cost.wood === BUILDINGS.timber_wall.cost.wood, 'each post costs what a timber wall does');
+  const capBefore = herdCap(gp);
+  const placed = gp.buildPen(px + 6, py + 5, px, py);   // dragged from the far corner back
+  ok(placed === 22 && gp.world.pens.length === 1, 'dragging the rectangle queues every post and the gate', `${placed}`);
+  finishAll(gp);
+  ok(herdCap(gp) === capBefore + penCapacity(gp.world.pens[0]), 'a finished pen adds room for stock', `${capBefore} → ${herdCap(gp)}`);
+  const goat = createBeast(gp.rng.fork('goat'), 'cavegoat', { tame: true });
+  const [ox, oy] = clearSpot(gp, 1, 1, 3);
+  goat.x = ox; goat.y = oy; gp.beasts.push(goat);
+  const P = gp.world.pens[0];
+  const inside = () => goat.x > P.x0 && goat.x < P.x1 && goat.y > P.y0 && goat.y < P.y1;
+  let inAt = -1;
+  for (let i = 0; i < TICKS_PER_DAY && inAt < 0; i++) { gp.step(); if (inside()) inAt = i; }
+  ok(inAt >= 0, 'loose stock walks in through the gate', `after ${inAt} ticks`);
+  let out = 0;
+  for (let i = 0; i < TICKS_PER_DAY * 2; i++) { gp.step(); if (!inside()) out++; }
+  ok(out === 0, 'and never wanders back out', `${out} ticks outside`);
+  gp.setFollow(goat.id, gp.colonists.find(c => !c.away).id);
+  for (let i = 0; i < 600; i++) gp.step();
+  ok(!inside(), 'a beast told to follow someone leaves the pen with them');
+
+  // --- stat lines ---
+  const rs = new RNG('stats');
+  const avg = (id, k) => { let t = 0; for (let i = 0; i < 20; i++) t += createMonster(rs, id, 2).attributes[k]; return t / 20; };
+  const m1 = createMonster(rs, 'goblin', 2);
+  ok(ATTRS.every(k => Number.isInteger(m1.attributes[k])), 'monsters roll all six attributes');
+  const giant = MONSTER_IDS.find(id => MONSTERS[id].fam === 'giant'), ooze = MONSTER_IDS.find(id => MONSTERS[id].fam === 'ooze');
+  ok(avg(giant, 'str') > avg('goblin', 'str') + 3 && avg('goblin', 'dex') > avg(ooze, 'dex') + 4, 'families have builds: giants are strong, goblins quick, oozes slow');
+  const Mg = MONSTERS.goblin, sa = monsterStrikeAttr(Mg), mm = Math.floor((m1.attributes[sa] - 10) / 2);
+  ok(m1.combat.acc === Math.round(5 + 1.15 * m1.level) + (Mg.acc || 0) + mm && m1.combat.dmgBonus === mm, 'its striking attribute adds to its to-hit and damage, as it does for people');
+  const lines = new Set(Array.from({ length: 10 }, () => ATTRS.map(k => createMonster(rs, 'goblin', 2).attributes[k]).join(',')));
+  ok(lines.size > 1, 'two of a kind can differ', `${lines.size} different stat lines in 10 goblins`);
+  const b1 = createBeast(rs, 'direwolf', { tame: true }), b2 = createBeast(rs, 'fowl', { tame: true });
+  ok(b1.attributes.str > b2.attributes.str + 6, 'beasts have builds too: a direwolf is far stronger than a hen');
+  const strong = createBeast(rs, 'warhound', { tame: true });
+  const weak = JSON.parse(JSON.stringify(strong));
+  strong.attributes.str = 18; weak.attributes.str = 6;
+  const cs = beastAsCombatant(strong).combat, cw = beastAsCombatant(weak).combat;
+  ok(cs.acc - cw.acc === 6 && cs.dmgBonus - cw.dmgBonus === 6, 'a stronger beast hits more often and harder');
+  ok(powerOf(beastAsCombatant(strong)) > powerOf(beastAsCombatant(weak)), 'and rates as the harder fight');
+  const pup = createBeast(rs, 'warhound', { tame: true, parents: [{ traits: [], attributes: { ...strong.attributes, str: 20 } }, { traits: [], attributes: { ...strong.attributes, str: 20 } }] });
+  ok(pup.attributes.str >= 19 && pup.attributes.str <= 21, 'young take after their parents', `${pup.attributes.str}`);
+  const legacy = { id: 'b77', species: 'ox' };
+  const la = beastAttributes(legacy);
+  ok(la.str === beastAttributes({ id: 'b77', species: 'ox' }).str && la.str >= 14, 'a beast from an older save gets its species’ stats, the same every load');
 });
 
 describe('Co-op lockstep and the desync fail-safe', () => {

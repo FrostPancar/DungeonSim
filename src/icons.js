@@ -43,7 +43,7 @@ export const BUILDING_ICON = {
   door: '🚪', barricade: '🚧',
   bed: '🛏️', table: '🍽️', brazier: '🔥', statue: '🗿', tavern: '🍺',
   stockpile: '📦',
-  farm: '🌱', mushroom: '🍄', field: '🌾', pasture: '🐾', barn: '🏚️',
+  farm: '🌱', mushroom: '🍄', field: '🌾', pasture: '🐾', pen: '🐾', pen_gate: '🚪', barn: '🏚️',
   trough: '🥣', butchery: '🔪', compost: '♻️',
   kitchen: '🍳', carpenter: '🪚', smithy: '⚒️', alchemy: '⚗️',
   library: '📚', infirmary: '⚕️',

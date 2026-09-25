@@ -12,7 +12,7 @@ import { occupyMove, occupantAt, freeTileNear, swapUnits, formationTiles, rebuil
 import { traitMod, refresh, shiftHostility } from './npc.js';
 import { drillSession, drillTarget } from './classes.js';
 import { CROPS, cropViability, recommendCrop, SOIL_DRAIN, growthStage } from './farming.js';
-import { ANIMALS, tameChance, butcherBeast, isMature, beastMod, herdCap } from './husbandry.js';
+import { ANIMALS, tameChance, butcherBeast, isMature, beastMod, herdCap, penLayout, livePens, penReady } from './husbandry.js';
 import { nearestHostile, tickDowned, sendToSafety, ENGAGE, RANGED_R } from './realtime.js';
 
 export const TICKS_PER_HOUR = 60;
@@ -128,6 +128,49 @@ export function orderMove(game, ids, x, y) {
     npc.order = { x: sx, y: sy }; npc.task = null;
   }
   for (const npc of left) { npc.order = { x, y }; npc.task = null; }   // no room: blockedStep will find one
+}
+
+/**
+ * Send people to bed: the bed at (x, y) for whoever is nearest it, and the
+ * nearest other free beds for the rest. A bed someone else owns or is asleep
+ * in is left alone. Returns how many were sent.
+ */
+export function orderSleep(game, ids, x, y) {
+  const w = game.world;
+  if (!w.inside(x, y)) return 0;
+  const target = w.building[w.idx(x, y)];
+  if (!target || !target.done || !BUILDINGS[target.id].rest) return 0;
+  const squad = ids.map(id => game.colonists.find(c => c.id === id && !c.away && !c.dead && !c.downed && !c.carriedBy)).filter(Boolean);
+  if (!squad.length) return 0;
+  const mine = new Set(squad.map(c => c.id));
+  // Beds already in use by someone outside the squad.
+  const busy = new Set();
+  for (const c of game.colonists) {
+    if (mine.has(c.id) || c.dead || (c.mapId || 0) !== (game._m.id || 0)) continue;
+    const t = c.task;
+    if (t && t.kind === 'sleep' && t.bed) busy.add(t.x + ',' + t.y);
+    if (c.order && c.order.sleep) busy.add(c.order.x + ',' + c.order.y);
+  }
+  const all = w.findBuildings().filter(r => BUILDINGS[r.b.id].rest);
+  const first = all.find(r => r.b === target);
+  if (!first) return 0;
+  // The clicked bed is taken even if someone else owns it, but not from under a sleeper.
+  const free = (r) => !busy.has(r.x + ',' + r.y) && (!r.b.owner || mine.has(r.b.owner) || r.b === target);
+  if (!free(first) && squad.length === 1) return 0;
+  const beds = [...(free(first) ? [first] : []), ...all.filter(r => r !== first && free(r))
+    .sort((a, b) => Math.hypot(a.x - first.x, a.y - first.y) - Math.hypot(b.x - first.x, b.y - first.y))];
+  // The one nearest the clicked bed takes it; the rest spread over the others.
+  const left = [...squad].sort((a, b) => Math.hypot(a.x - first.x, a.y - first.y) - Math.hypot(b.x - first.x, b.y - first.y));
+  let n = 0;
+  for (const bed of beds) {
+    const npc = left.shift();
+    if (!npc) break;
+    if (!bed.b.owner) bed.b.owner = npc.id;
+    npc.order = { x: bed.x, y: bed.y, sleep: BUILDINGS[bed.b.id].rest };
+    npc.task = null; npc.path = null;
+    n++;
+  }
+  return n;
 }
 
 // --- shared work sites --------------------------------------------------------
@@ -248,6 +291,26 @@ export function placeBlueprint(game, x, y, id) {
   return true;
 }
 
+/**
+ * A pen over the rectangle (x0, y0)–(x1, y1): fence blueprints round the edge
+ * and a gate, and a pen record so stock knows where home is. Edge tiles already
+ * walled or fenced are left as they are — they close the pen just the same.
+ * Returns how many pieces were queued.
+ */
+export function placePen(game, x0, y0, x1, y1) {
+  const w = game.world;
+  if (!game.unlocked.has('pen')) return 0;
+  const L = penLayout(w, x0, y0, x1, y1);
+  if (!L.ok) return 0;
+  let n = 0;
+  for (const [x, y] of L.fence) if (placeBlueprint(game, x, y, 'pen')) n++;
+  if (!placeBlueprint(game, L.gate[0], L.gate[1], 'pen_gate')) return n;
+  if (!w.pens) w.pens = [];
+  w.nextPen = (w.nextPen || 0) + 1;
+  w.pens.push({ id: w.nextPen, x0: L.x0, y0: L.y0, x1: L.x1, y1: L.y1, gate: L.gate });
+  return n + 1;
+}
+
 /** A floor blueprint. Floors are their own layer under `w.building`, so a
  *  room can be floored and furnished at once — and refloored, since this
  *  happily replaces a finished floor with a new type. */
@@ -358,7 +421,7 @@ export function rebuildJobs(game) {
     }
   }
   // --- livestock work -------------------------------------------------------
-  const hasPasture = w.findBuildings('pasture').length > 0;
+  const hasPasture = w.findBuildings('pasture').length > 0 || livePens(w).some(p => penReady(w, p));
   const hasButchery = w.findBuildings('butchery').length > 0;
   const tameCount = game.beasts.filter(b => b.tame && !b.dead).length;
   const cap = herdCap(game);
@@ -616,6 +679,13 @@ function assignTask(game, npc) {
     // Stairs (or the Rift's mouth): walk up to them, then change maps.
     const o = npc.order;
     npc.task = { kind: 'travel', x: o.x, y: o.y, work: 0, travel: o.travel, recall: !!o.recall };
+    return;
+  }
+  if (npc.order && npc.order.sleep) {
+    // Sent to bed: they go now, and sleep at least a couple of hours even if
+    // they aren't tired — or through to dawn, if it's night.
+    const o = npc.order;
+    npc.task = { kind: 'sleep', x: o.x, y: o.y, work: 0, bed: o.sleep, night: game.isNight, ordered: true, until: game.tick + TICKS_PER_HOUR * 2 };
     return;
   }
   if (npc.order && npc.order.work) {
@@ -1133,8 +1203,10 @@ function doTask(game, npc) {
 
   if (t.kind === 'sleep') {
     npc.state = 'sleeping';
+    // In bed: the order that sent them is done, and they sleep like anyone else.
+    if (npc.order && npc.order.sleep) npc.order = null;
     // A night's sleep lasts the night; any other sleep ends when they're rested.
-    const keepOn = t.night && game.isNight && !npc.order;
+    const keepOn = (t.night && game.isNight && !npc.order) || (t.until > game.tick && !npc.order);
     if (npc.needs.rest >= 0.99 && !keepOn) completeTask(game, npc);
     else if (t.night && npc.order) { npc.task = null; }   // woken by an order
     return;

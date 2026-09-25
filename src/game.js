@@ -10,12 +10,12 @@ import { tickCombat } from './realtime.js';
 import { generateFloor, tickFloorMonsters, tickFloorTraps, openProp, unloadPack, lairReward, placeMerchant } from './floors.js';
 import { Overworld, BIOMES, SITE_KINDS } from './overworld.js';
 import { SEASONS, DAYS_PER_SEASON, DAYS_PER_YEAR, seasonOf, yearOf, initSoil, CROPS, recommendCrop } from './farming.js';
-import { tickBeasts, spawnWildHerd, createBeast, herdCap, resetBeastIds, ANIMALS, tickFollowers, bringFollowers, moveBeastTo, canFollow } from './husbandry.js';
+import { tickBeasts, spawnWildHerd, createBeast, herdCap, resetBeastIds, ANIMALS, tickFollowers, bringFollowers, moveBeastTo, canFollow, canHeel } from './husbandry.js';
 import { generateNPC, generateGroup, resetIds, powerOf, refresh, shiftHostility } from './npc.js';
 import {
   tickColonist, tickFarms, tickForest, rebuildJobs, addResource, designate, placeBlueprint, placeFloorBlueprint,
   advanceResearch, pickNextResearch, addThought, TICKS_PER_DAY, TICKS_PER_HOUR, storageCap,
-  rushJob, orderMove, orderWork, siteJobAt, siteWorkLeft, carryAlong,
+  rushJob, orderMove, orderWork, orderSleep, placePen, siteJobAt, siteWorkLeft, carryAlong,
 } from './colony.js';
 import { tickSocial, resolveSocializeTask } from './social.js';
 import { generateDungeon, estimateDanger, estimateReward, MAX_DEPTH } from './dungeon.js';
@@ -681,6 +681,8 @@ export class Game {
   rush(x, y) { return rushJob(this, x, y); }
   orderMove(ids, x, y) { return orderMove(this, ids, x, y); }
   orderWork(ids, x, y) { return orderWork(this, ids, x, y); }
+  orderSleep(ids, x, y) { return orderSleep(this, ids, x, y); }
+  buildPen(x0, y0, x1, y1) { return placePen(this, x0, y0, x1, y1); }
   /**
    * Someone is down: the nearest able member of the selection goes to pick
    * them up and carry them to safety. Returns the rescuer, or null.
@@ -1103,12 +1105,30 @@ export class Game {
    * Give a war or pack beast a handler (a colonist id), or none. It follows
    * them into the Rift and back, fights beside them and carries for them.
    */
+  /** Tell a tame beast to follow someone (or, with null, to stop). A war or
+   *  pack beast also takes them as its handler, so it follows them below too. */
+  setFollow(beastId, colonistId) {
+    let b = null, bm = null;
+    for (const m of this.maps) { b = m.beasts.find(x => x.id === beastId); if (b) { bm = m; break; } }
+    if (!b || !canHeel(b)) return false;
+    const c = colonistId == null ? null : this.colonists.find(x => x.id === colonistId && !x.dead && !x.away);
+    if (colonistId != null && !c) return false;
+    // Only a beast that can take the stairs can be told to follow someone on another floor.
+    if (c && (c.mapId || 0) !== bm.id && !canFollow(b)) return false;
+    if (!c && b.follow != null && b.handler === b.follow) b.handler = null;
+    b.follow = c ? c.id : null;
+    if (c && canFollow(b)) b.handler = c.id;
+    return true;
+  }
+
   setHandler(beastId, colonistId) {
     let b = null;
     for (const m of this.maps) { b = m.beasts.find(x => x.id === beastId); if (b) break; }
     if (!b || !canFollow(b)) return false;
     const c = colonistId == null ? null : this.colonists.find(x => x.id === colonistId && !x.dead);
     b.handler = c ? c.id : null;
+    // A new handler (or none) ends following anyone else.
+    if (b.follow != null && b.follow !== b.handler) b.follow = null;
     return true;
   }
 
