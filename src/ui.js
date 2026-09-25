@@ -221,7 +221,8 @@ export class UI {
     this.paused = false;
     this.toasts = [];
     this.lastLogLen = 0;
-    this.buildCat = null;
+    // The Build window reopens on whichever tab was last open, across reloads too.
+    this.buildCat = storeGet('riftgate.buildCat') || null;
     this.squad = new Set();     // ids of band-selected colonists
     this.party = { ids: [], set: false };  // who the Rift tab's Enter button sends
     this.bulkJob = 'haul';      // which priority the squad panel is editing
@@ -488,7 +489,7 @@ export class UI {
       else if (k === 'h') this.setTool({ mode: 'harvest' });
       else if (k === 'x') this.setTool({ mode: 'cancel' });
       else if (k === 'g') this.setTool({ mode: 'squad' });
-      else if (k === 'b') this.toggleBuildPick('structure');
+      else if (k === 'b') this.toggleBuildPick(this.buildCat || 'structure');
       else if (k === 'w') { this.drawer = this.drawer === 'people' ? null : 'people'; this.sigs.drawer = null; this.hide('#buildpick'); this.renderRail(); this.renderDrawer(); }
       else if (k === 'a' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); this.selectAllColonists(); }
       else if (k === 'o') {
@@ -611,7 +612,7 @@ export class UI {
     });
     $('#buildpick').addEventListener('click', (e) => {
       const cat = e.target.closest('[data-cat]');
-      if (cat) { this.buildCat = cat.dataset.cat; this.renderArchitect(); return; }
+      if (cat) { this.setBuildCat(cat.dataset.cat); this.renderArchitect(); return; }
       const gz = e.target.closest('.gz'); if (!gz) return;
       if (gz.dataset.locked) {
         const tech = gz.dataset.tech, R = RESEARCH[tech];
@@ -1745,12 +1746,13 @@ export class UI {
   // separate tabs of their own. The first entry is the group's key and default.
   // Each sub-tab holds one kind of thing: the market only trades, the workshop
   // only makes, the tree only researches.
+  // Each sub-tab is [drawer, label, icon]; the strip draws them as icon buttons.
   static GROUPS = {
-    people: [['people', 'Duties'], ['roster', 'Roster'], ['classes', 'Classes']],
-    colony: [['colony', 'Overview'], ['farm', 'Fields & Animals'], ['workshop', 'Workshop'], ['log', 'Chronicle']],
-    research: [['research', 'Tech tree'], ['bestiary', 'Bestiary']],
-    party: [['party', 'Party']],
-    region: [['region', 'Map'], ['trade', 'Market'], ['services', 'Services']],
+    people: [['people', 'Duties', '🛠️'], ['roster', 'Roster', '📋'], ['classes', 'Classes', '🎓']],
+    colony: [['colony', 'Overview', '📊'], ['farm', 'Fields & Animals', '🌾'], ['workshop', 'Workshop', '⚒️'], ['log', 'Chronicle', '📜']],
+    research: [['research', 'Tech tree', '🔬'], ['bestiary', 'Bestiary', '📖']],
+    party: [['party', 'Party', '🌀']],
+    region: [['region', 'Map', '🗺️'], ['trade', 'Market', '🐫'], ['services', 'Services', '🪙']],
   };
   static groupOf(drawer) {
     for (const k in UI.GROUPS) if (UI.GROUPS[k].some(([d]) => d === drawer)) return k;
@@ -1942,7 +1944,7 @@ export class UI {
     const subs = UI.GROUPS[grp] || [];
     const dt = $('#drawer .dtabs');
     if (dt && dt.classList) {
-      const html = subs.length > 1 ? subs.map(([k, n]) => `<button data-sub="${k}" class="${k === this.drawer ? 'on' : ''}">${n}</button>`).join('') : '';
+      const html = subs.length > 1 ? subs.map(([k, n, ic]) => `<button data-sub="${k}" class="${k === this.drawer ? 'on' : ''}" aria-pressed="${k === this.drawer}"><span class="dti">${ic || ''}</span>${n}</button>`).join('') : '';
       if (dt.innerHTML !== html) dt.innerHTML = html;
       dt.classList.toggle('hidden', subs.length < 2);
       dt.onclick = (e) => { const b = e.target.closest && e.target.closest('button'); if (!b) return; this.drawer = b.dataset.sub; this.sigs.drawer = null; this.renderRail(); this.renderDrawer(); };
@@ -2012,7 +2014,7 @@ export class UI {
     const fd = this.foodDays();
     const ow = g.overworld;
     body.appendChild(profileCard({
-      tone: '#e2b84c', avatar: '🌀', badge: g.colonyTier,
+      slim: true, tone: '#e2b84c', avatar: '🌀', badge: g.colonyTier,
       avTip: `Hold tier ${g.colonyTier} — rises with cleared delves, strong delvers and research`,
       acts: [
         { label: '📜', tip: 'Chronicle', onClick: () => this.openDrawer('log') },
@@ -2031,10 +2033,6 @@ export class UI {
         { label: 'People', value: home.length, tip: 'At home now' },
         { label: 'Wealth', value: Math.round(g.wealth), color: 'var(--hi)', tip: 'Everything the hold owns, valued in gold' },
       ],
-      foot: [
-        { label: '🛠️ Duties', onClick: () => this.openDrawer('people') },
-        { label: '🌾 Fields & Animals', onClick: () => this.openDrawer('farm') },
-      ],
     }));
 
     // --- needs: a ranked bar chart, worst first, because that is the reading
@@ -2051,17 +2049,6 @@ export class UI {
       };
     }).sort((a, b) => a.value - b.value);
     body.appendChild(el('div', '', bars({ rows: needRows, max: 100, fmt: (v) => v + '%' })));
-
-    // --- stores, each against the one ceiling that actually bites
-    const cap = g.storageCap;
-    body.appendChild(el('div', '', sectHtml('Stores', `ceiling ${cap} each`)));
-    const keys = ['food', 'meal', 'wood', 'stone', 'iron', 'cloth', 'herbs', 'gold', 'dust'];
-    body.appendChild(el('div', '', keys.map(k => {
-      const v = Math.floor(g.resources[k] || 0);
-      return kbar(`${RESOURCE_ICON[k]} ${RESOURCES[k].name}`, v, cap, v >= cap ? STATUS.critical : RESOURCES[k].color,
-        v >= cap ? `${v} · full` : `${v}`, 'wide');
-    }).join('')));
-    body.appendChild(el('div', 'hint', 'Each Stockpile adds 60 to the ceiling. Past it, hauled goods are simply lost.'));
 
     // --- labour: composition of a whole, so a stacked bar with a full legend
     const census = {};
@@ -2382,21 +2369,6 @@ export class UI {
     const g = this.game;
     const ow = g.overworld;
     const known = ow.discovered();
-    const kindCount = (test) => known.filter(s => s.kind !== 'colony' && test(SITE_KINDS[s.kind])).length;
-    body.appendChild(profileCard({
-      tone: '#5aa9e6', avatar: '🗺️', slim: true,
-      acts: [{ label: '🐫 Caravans', text: true, onClick: () => this.openDrawer('trade') }],
-      name: `The region around Rift Camp`,
-      sub: `${BIOMES[g.biome].name}${ow.climate ? ` · ${WORLD_SHAPES[ow.climate.shape] || ''}` : ''} · the Rift is the only living dungeon for leagues. Click a place on the map to inspect it.`,
-      extra: `<div class="wd-exp"><u><i style="width:${Math.round(known.length / ow.sites.length * 100)}%"></i></u> ${known.length}/${ow.sites.length} sites charted</div>`,
-      stats: [
-        { label: 'Charted', value: `${known.length}<small>/${ow.sites.length}</small>` },
-        { label: 'Settlements', value: kindCount(K => K.settle && K !== SITE_KINDS.colony) },
-        { label: 'Hostile', value: kindCount(K => K.hostileSite), color: 'var(--bad)' },
-        { label: 'Resources', value: kindCount(K => K.node) },
-        { label: 'Worth a trip', value: known.filter(st => siteErrand(st)).length, color: 'var(--hi)', tip: 'Sites marked ! — resources to gather, ruins to search, camps to clear' },
-      ],
-    }));
     const frame = el('div', 'wd-map');
     const cv = el('canvas');
     // Match the map's own proportions so no cell is wasted on letterboxing.
@@ -2554,7 +2526,6 @@ export class UI {
   drawParty(body) {
     // Read top to bottom as the questions come: what state is the gate in, is
     // anyone inside, who goes next, what waits for them, what comes out tonight.
-    this.drawRiftHero(body);
     this.drawLairGoal(body);
     this.drawRiftParties(body);
     this.drawPartyLayout(body);
@@ -2630,18 +2601,6 @@ export class UI {
     const g = this.game;
     const met = Object.keys(g.bestiary || {}).filter(id => MONSTERS[id]);
     const slain = met.reduce((s, id) => s + (g.bestiary[id].kills || 0), 0);
-    body.appendChild(profileCard({
-      slim: true, tone: '#b07ae0', avatar: '📖',
-      acts: [{ label: '🔬 Tech tree', text: true, onClick: () => this.openDrawer('research') }],
-      name: 'Bestiary',
-      sub: 'Every monster met. One kill teaches its stats, three its weaknesses, ten a lasting edge against it.',
-      stats: [
-        { label: 'Known', value: `${met.length}<small>/${MONSTER_IDS.length}</small>` },
-        { label: 'Slain', value: slain },
-        { label: 'Weakness known', value: met.filter(id => bestiaryKnowledge(g, id) >= 2).length, color: 'var(--good)' },
-        { label: 'Mastered', value: met.filter(id => bestiaryKnowledge(g, id) >= 3).length, color: 'var(--hi)' },
-      ],
-    }));
     body.appendChild(el('div', '', sectHtml('Monsters', `${met.length} of ${MONSTER_IDS.length} known`)));
     if (!met.length) { body.appendChild(el('div', 'mini', 'Nothing met yet. Monsters are recorded when a party or the camp fights them; their weaknesses are learned by killing a few.')); return; }
     for (const fam of FAMILY_IDS) {
@@ -2688,30 +2647,6 @@ export class UI {
         <div class="mini">${broken ? 'Come back when the Rift deepens for the next one.' : `The lair boss waits at the bottom of the Rift. ${nextIn > 0 ? `In <b>${nextIn} day${nextIn === 1 ? '' : 's'}</b> the Rift deepens and the lair moves to floor ${depth + 1}.` : ''}`}</div></div></div>
       <div class="goal-rw"><span class="mini">Reward</span>${loot}<span class="kw kw-good"><i>⚔️</i>2 pieces of gear</span><span class="kw kw-good"><i>💠</i>${4 + depth} Rift shards</span><span class="kw kw-good"><i>🌙</i>2 nights with no wave</span>${firstTome ? '<span class="kw kw-good"><i>📕</i>a Class Tome (first lair)</span>' : ''}</div>
       <div class="goal-rw"><span class="mini" data-tipt="Loot is what your delvers carry in their packs. It only counts once they walk it back up and out of the Rift.">Loot in packs below</span>${carriedHtml}</div>`));
-  }
-
-  drawRiftHero(body) {
-    const g = this.game;
-    const R = g.rift;
-    const open = g.isNight;
-    const rank = g.riftRank;
-    const nextIn = g.riftNextLevelIn;
-    body.appendChild(profileCard({
-      tone: open ? '#ff4d6d' : '#9b6cff', cls: 'rift' + (open ? ' open' : ''),
-      avatar: '🌀', badge: `<span class="rk-${rank}">${rank}</span>`,
-      avTip: `Rank ${rank}\nThe Rift climbs the guild ranks as it deepens: E up to SSS.`,
-      acts: [{ label: '📖', tip: 'Bestiary — what lives inside', onClick: () => this.openDrawer('bestiary') }],
-      name: `The Rift Gate <span class="badge ${open ? 'bad' : 'info'}">${open ? 'Open' : 'Quiet'}</span>`,
-      sub: open ? `Spawn walk the camp until dawn, in <b>${g.hoursToDawn}h</b>.` : `Parties may enter by day. It opens at dusk, in <b>${g.hoursToDusk}h</b>.`,
-      extra: `<div class="rf-lv"><span>Level ${R.level}</span><u><i style="width:${nextIn > 0 ? Math.round((1 - nextIn / RIFT_DAYS_PER_LEVEL) * 100) : 100}%"></i></u>
-          <em>${nextIn > 0 ? `deepens in ${nextIn}d` : 'at its deepest'}</em></div>`,
-      stats: [
-        { label: 'Rank', value: `<span class="rk-${rank}" style="color:var(--rk)">${rank}</span>` },
-        { label: 'Level', value: R.level },
-        { label: open ? 'Dawn in' : 'Dusk in', value: (open ? g.hoursToDawn : g.hoursToDusk) + 'h', color: !open && g.hoursToDusk <= 3 ? 'var(--warn)' : '' },
-        { label: 'Tonight', value: `~${g.waveForecast.size}`, tip: 'Spawn expected at dusk', color: 'var(--danger)' },
-      ],
-    }));
   }
 
   /**
@@ -2841,18 +2776,6 @@ export class UI {
     // --- banner: what is being studied and whether anyone can study it
     const libs = g.world.findBuildings('library').length;
     const f = cur ? g.research.progress / R[cur].cost : 0;
-    body.appendChild(profileCard({
-      tone: '#e2b84c', avatar: cur ? TECH_ICON[cur] || '🔬' : '🔬', badge: cur ? '⏳' : '!',
-      acts: [{ label: '📖 Bestiary', text: true, onClick: () => this.openDrawer('bestiary') }],
-      name: cur ? `<span class="prof-kicker">Researching</span>${esc(R[cur].name)}` : '<span style="color:var(--warn)">Pick a project in the tree</span>',
-      sub: cur ? esc(R[cur].desc || '') : 'Nobody is studying anything. Click a ready tech below to start.',
-      extra: cur ? `<div class="rs-prog"><i style="width:${Math.round(f * 100)}%"></i><span>${Math.round(g.research.progress)} / ${R[cur].cost} insight · ${Math.round(f * 100)}%</span></div>` : '',
-      stats: [
-        { label: 'Discovered', value: `${g.research.done.size}<small>/${ids.length}</small>` },
-        { label: 'Queued', value: g.research.queue.length },
-        { label: 'Libraries', value: libs, color: libs ? '' : 'var(--danger)', tip: 'Nobody can study without one' },
-      ],
-    }));
     if (!libs) body.appendChild(el('div', 'alarm', `<span class="li">📚</span>No Library — nobody can study until one is built.`));
     if (g.research.queue.length) {
       body.appendChild(el('div', 'rs-queue', `<em>Queue</em> ${g.research.queue.map((q, i) =>
@@ -2944,17 +2867,6 @@ export class UI {
     const g = this.game;
     const gold = Math.floor(g.resources.gold || 0);
     const leaves = g.caravan ? Math.max(0, Math.round((g.caravan.expires - g.tick) / 60)) : 0;
-    body.appendChild(profileCard({
-      tone: '#e2b84c', avatar: '🐫', badge: g.caravan || g.pendingArrivals.length ? g.pendingArrivals.length + (g.caravan ? 1 : 0) : '',
-      acts: [{ label: '🗺️', tip: 'World map', onClick: () => this.openDrawer('region') }],
-      name: 'Market',
-      sub: g.caravan ? `A caravan from ${esc(g.caravan.name)} is in town.` : g.pendingArrivals.length ? 'Someone is waiting at the gate.' : 'Quiet. Caravans and wanderers arrive over time.',
-      stats: [
-        { label: 'Gold', value: gold, color: 'var(--hi)' },
-        { label: 'At the gate', value: g.pendingArrivals.length, color: g.pendingArrivals.length ? 'var(--warn)' : '' },
-        { label: 'Caravan', value: g.caravan ? `${leaves}h left` : '—', color: g.caravan ? 'var(--good)' : '' },
-      ],
-    }));
 
     // --- arrivals
     if (g.pendingArrivals.length) {
@@ -3193,22 +3105,11 @@ export class UI {
    */
   drawServices(body) {
     const g = this.game, gold = Math.floor(g.resources.gold || 0);
-    const costs = dailyCosts(g), daily = costs.mercs + costs.stipends + costs.upkeep;
     const L = ledger(g);
     const week = {};
     for (const d of L.days.slice(-7)) for (const [k, v] of Object.entries(d.spent || {})) week[k] = (week[k] || 0) + v;
     for (const [k, v] of Object.entries(L.today || {})) week[k] = (week[k] || 0) + v;
     const weekTotal = Object.values(week).reduce((a, b) => a + b, 0);
-    body.appendChild(profileCard({
-      tone: '#e2b84c', avatar: '🪙', name: 'Services & spending',
-      sub: 'Sellswords, feasts, blessings, training and journeys — and where the gold has gone.',
-      stats: [
-        { label: 'Gold', value: gold, color: 'var(--hi)' },
-        { label: 'Daily costs', value: daily, tip: `Sellswords ${costs.mercs} · stipends ${costs.stipends} · shop upkeep ${costs.upkeep}` },
-        { label: 'Spent (7 days)', value: weekTotal },
-        { label: 'Safe from raids', value: vaultSafe(g), tip: 'Gold the Counting House keeps out of raiders’ reach' },
-      ],
-    }));
     const wrap = el('div', 'shops');
     const sect = (t, m) => el('div', 'shop-sect', sectHtml(t, m));
     const btn = (label, act, cost, tip = '', ok = true) => `<button class="act${ok && gold >= cost ? '' : ''}" ${act} ${ok && gold >= cost ? '' : 'disabled'} data-tipt="${esc(tip)}">${label}${cost ? ` <span class="cost">🪙${cost}</span>` : ''}</button>`;
@@ -4285,11 +4186,17 @@ export class UI {
   toggleBuildPick(cat) {
     const pick = $('#buildpick');
     if (this.buildCat === cat && !pick.classList.contains('hidden')) { this.hide('#buildpick'); this.renderRail(); return; }
-    this.buildCat = cat;
+    this.setBuildCat(cat);
     if (this.drawer) { this.drawer = null; this.renderDrawer(); }
     this.show('#buildpick');
     this.renderArchitect();
     this.renderRail();
+  }
+
+  setBuildCat(cat) {
+    if (!UI.ARCH_CATS.some(([k]) => k === cat)) return;
+    this.buildCat = cat;
+    storeSet('riftgate.buildCat', cat);
   }
 
   renderArchitect() {
@@ -4299,7 +4206,7 @@ export class UI {
       return url ? `<img class="gz-img" src="${url}" alt="">` : (kind === 'floor' ? FLOOR_ICON[id] : BUILDING_ICON[id]) || '🧱';
     };
     const g = this.game;
-    const cat = this.buildCat || 'structure';
+    const cat = UI.ARCH_CATS.some(([k]) => k === this.buildCat) ? this.buildCat : 'structure';
     const pick = $('#buildpick');
     const cats = UI.ARCH_CATS.map(([k, name, ic]) =>
       `<button data-cat="${k}" class="${k === cat ? 'on' : ''}"><span>${ic}</span>${name}</button>`).join('');

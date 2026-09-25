@@ -316,12 +316,14 @@ html,body,canvas#map{cursor:var(--cur-arrow)}
   border-radius:var(--r1);color:var(--dim);cursor:var(--cur-hand);font:inherit;font-size:14px;padding:0;transition:background .12s,color .12s}
 .d-close:hover,.close:hover{color:#fff;background:var(--s3)}
 .drawer .body{overflow:auto;flex:1;padding:10px 14px 14px;border-top:1px solid var(--line)}
-.dtabs{display:flex;gap:2px;padding:0 10px;flex:none}
+/* Sub-tabs: a row of icon buttons, the open one lit. */
+.dtabs{display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 8px;flex:none}
 .dtabs.hidden{display:none}
-.dtabs button{background:none;border:0;border-bottom:2px solid transparent;color:var(--dim);font:inherit;font-size:12.5px;font-weight:600;
-  padding:6px 10px 7px;cursor:var(--cur-hand);transition:color .12s,border-color .12s}
-.dtabs button:hover{color:#fff;border-bottom-color:var(--rule2)}
-.dtabs button.on{color:#fff;border-bottom-color:var(--hi)}
+.dtabs button{display:inline-flex;align-items:center;gap:6px;background:var(--s1);border:1px solid var(--rule);border-radius:var(--r2);color:var(--dim);
+  font:inherit;font-size:12.5px;font-weight:600;padding:5px 11px 5px 8px;cursor:var(--cur-hand);transition:color .12s,border-color .12s,background .12s}
+.dtabs button:hover{color:#fff;border-color:var(--rule2);background:var(--s2)}
+.dtabs button.on{color:#fff;border-color:var(--hi-line);background:var(--hi-bg)}
+.dtabs .dti{font-size:14px;line-height:1}
 
 /* The full inspector always sits bottom-right, stacked on the date box —
    ui.placeInspector() measures the box. It grows out of the hover card that
@@ -503,7 +505,7 @@ html,body,canvas#map{cursor:var(--cur-arrow)}
 .co-w span{font-size:16px;display:block}
 .co-w b{font-size:19px;color:var(--hi);display:block}
 .co-w em{font-style:normal;color:var(--dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em}
-.co-sparks{display:grid;grid-template-columns:1fr 1fr;gap:0 8px}
+.co-sparks{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0 8px}
 .co-run{display:flex;flex-wrap:wrap;gap:6px}
 .co-run span{background:var(--s1);border:1px solid var(--line);border-radius:var(--r1);padding:3px 9px;color:var(--dim)}
 .co-run b{color:#fff;font-variant-numeric:tabular-nums;margin-right:2px}
