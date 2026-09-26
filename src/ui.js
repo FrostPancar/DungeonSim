@@ -3292,7 +3292,7 @@ export class UI {
 
   /**
    * World › Services: gold spent on people and favours — sellswords,
-   * rumours, blessings, training, journeys — plus standing orders, the
+   * training, journeys — plus standing orders, the
    * strongroom, and where the gold has gone.
    */
   drawServices(body) {
