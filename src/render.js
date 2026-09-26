@@ -1135,6 +1135,18 @@ function flame(g, cx, cy, s, now, seed) {
   oval(g, cx, cy + s * 0.05, s * 0.35, s * 0.55 * f, '#ffe08a');
 }
 
+function plantingArt(g, o, stem, top, shape) {
+  const k = 0.35 + 0.65 * Math.min(1, (o.b && o.b.growth) || 0);
+  oval(g, 0.5, 0.78, 0.3, 0.1, '#3d2a1a');
+  oval(g, 0.5, 0.76, 0.24, 0.07, '#5b4a38');
+  const h = 0.18 + 0.32 * k;
+  line(g, 0.5, 0.76, 0.5, 0.76 - h, stem, 0.035);
+  if (shape === 'cap') oval(g, 0.5, 0.76 - h, 0.08 + 0.12 * k, 0.05 + 0.05 * k, top);
+  else for (const [dx, dy] of [[-1, 0.2], [1, 0.35], [-1, 0.55], [1, 0.75], [0, 1]]) {
+    if (dy > k + 0.1) continue;
+    disc(g, 0.5 + dx * 0.07 * k, 0.76 - h * dy, 0.04 + 0.04 * k, top);
+  }
+}
 const ART = {
   bed(g, o) {
     // Head to the north; the caller rotates it for north–south rooms.
@@ -1670,6 +1682,21 @@ const ART = {
     fillRR(g, 0.44, 0.52, 0.12, 0.12, 0.02, '#8a643a');
     line(g, 0.5, 0.5, 0.5, 0.52, '#c9b88a', 0.012);
   },
+  gear_armory(g, o) {
+    // A weapon rack under a little roof: blades upright, a shield hung on the end.
+    shadowRR(g, 0.1, 0.3, 0.8, 0.58, 0.04);
+    fillRR(g, 0.08, 0.14, 0.84, 0.12, 0.03, '#5a3c22');
+    line(g, 0.16, 0.24, 0.16, 0.88, '#5a3c22', 0.07); line(g, 0.84, 0.24, 0.84, 0.88, '#5a3c22', 0.07);
+    line(g, 0.14, 0.4, 0.86, 0.4, '#7a5a3a', 0.05); line(g, 0.14, 0.78, 0.86, 0.78, '#7a5a3a', 0.05);
+    for (const bx of [0.3, 0.42, 0.54]) { line(g, bx, 0.3, bx, 0.74, '#c8ccd4', 0.035); line(g, bx - 0.04, 0.66, bx + 0.04, 0.66, '#8a6a3a', 0.025); }
+    line(g, 0.64, 0.3, 0.64, 0.78, '#7a5a3a', 0.025); oval(g, 0.64, 0.33, 0.04, 0.06, '#b6bcc6');
+    disc(g, 0.76, 0.56, 0.1, '#6a4a8a'); disc(g, 0.76, 0.56, 0.05, '#d9c080');
+  },
+  // Plantings: a mound of turned earth and a sprout that fills out as it grows.
+  plant_tree(g, o) { plantingArt(g, o, '#4f7a35', '#79a848', 'leaf'); },
+  plant_fungus(g, o) { plantingArt(g, o, '#c8c0a8', '#7ab08a', 'cap'); },
+  plant_herb(g, o) { plantingArt(g, o, '#4f8a3a', '#6fcf97', 'leaf'); },
+  plant_glowcap(g, o) { plantingArt(g, o, '#6ab0a0', '#8ae0c0', 'cap'); },
   scarecrow(g, o) {
     // Crossed poles, a straw body and a patched hat; the straw frays in the wind.
     oval(g, 0.58, 0.84, 0.18, 0.05, 'rgba(0,0,0,0.3)');
@@ -2857,16 +2884,31 @@ export class Renderer {
       }
       this.fxSeen.set(f, f.fxSeq);
     }
-    this.floaters = this.floaters.filter(o => now - o.t0 < 1.0);
-    if (this.showNumbers === false) this.floaters.length = 0;
+    // What a colonist just gathered floats up off their head, a little slower
+    // than a hit so it can be read.
+    if (!this.gatherSeen) this.gatherSeen = new WeakMap();
+    const here = this.game._m ? this.game._m.id : 0;
+    for (const c of this.game.colonists) {
+      const g = c.gatherFx;
+      if (!g || c.dead || c.away || (c.mapId || 0) !== here) continue;
+      const seen = this.gatherSeen.get(c);
+      this.gatherSeen.set(c, g.seq);
+      if (seen === undefined || g.seq <= seen) continue;
+      const m = this.motion && this.motion.get(c);
+      this.floaters.push({ x: m ? m.x : c.x, y: (m ? m.y : c.y) - 0.35, text: g.text, color: '#ffe08a', kind: 'word', t0: now, life: 1.8 });
+    }
+    this.floaters = this.floaters.filter(o => now - o.t0 < (o.life || 1.0));
+    // The damage-numbers option hides combat numbers, not what was gathered.
+    if (this.showNumbers === false) this.floaters = this.floaters.filter(o => o.life);
     ctx.save();
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     for (const o of this.floaters) {
       const k = now - o.t0;
       if (k < 0) continue;
-      const [x, y] = this.worldToScreen(o.x + 0.5, o.y + 0.1 - k * 0.9);
+      const life = o.life || 1.0;
+      const [x, y] = this.worldToScreen(o.x + 0.5, o.y + 0.1 - k * 0.9 / life);
       const size = o.kind === 'word' ? Math.max(10, t * 0.3) : Math.max(11, t * 0.38);
-      ctx.globalAlpha = k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3;
+      ctx.globalAlpha = k < life * 0.7 ? 1 : 1 - (k - life * 0.7) / (life * 0.3);
       ctx.font = `800 ${Math.round(size)}px ${UI_FONT}`;
       if (pxOf(o.text) && this.atlas.draw(ctx, o.text, x, y, size * 1.3)) continue;
       ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(8,9,12,0.9)';

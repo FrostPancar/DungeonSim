@@ -35,13 +35,13 @@ const COOP_FAR_BEHIND = 2880;          // two days behind: fetch a snapshot rath
  * data: ids, coordinates and strings, never object references.
  */
 export const COOP_OPS = {
-  build: true, buildPen: true, designate: true, rush: true,
+  build: true, buildPen: true, designate: true, rush: true, demolish: '',
   orderMove: true, orderWork: true, orderSleep: 1, orderTravel: true, orderAttack: true,
   orderTame: true, orderRescue: true, orderHunt: true, markButcher: true,
   setPriority: true, setHandler: true, setFollow: true, setCrop: true, cancelTraining: true,
   setResearch: true, unqueueResearch: true, queueResearch: true, researchPart: null,
   launchExpedition: { ok: true, ids: [] }, choosePrestige: null,
-  equip: null, unequip: true, upgradeGear: true, forge: null, craftLegendary: null, brew: null,
+  equip: null, unequip: true, autoEquip: 0, upgradeGear: true, forge: null, craftLegendary: null, brew: null,
   enroll: null, readTome: null, learnBook: null, copyBook: null, designSpell: null, buildFloor: true,
   buy: true, sell: true, buyLivestock: true, buyMagic: null, sellBook: null,
   acceptArrival: true, rejectArrival: true,

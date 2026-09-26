@@ -307,7 +307,7 @@ export const BUILDINGS = {
   turret_ballista: { name: 'Ballista Turret', cat: 'martial', cost: { wood: 20, iron: 15 },           work: 90,  solid: true, hp: 180, glyph: 't', desc: 'A physical ranged defender. Fights in night sieges.' },
   turret_arcane:   { name: 'Arcane Turret',   cat: 'martial', cost: { stone: 15, dust: 20, gems: 5 }, work: 130, solid: true, hp: 150, glyph: 'y', desc: 'A magic ranged defender — answers what the ballista resists.' },
   watchtower: { size: [2, 2], name: 'Watchtower',      cat: 'martial',   cost: { stone: 40, wood: 20, iron: 10 },  work: 160, solid: true,  glyph: '^', light: 2, beauty: 1, desc: 'A proper tower over the camp. Earlier raid warning, like the Watchpost.' },
-  armory:     { size: [3, 2], walled: true, name: 'Armory',          cat: 'martial',   cost: { wood: 20, iron: 15, gold: 30 },   work: 80,  solid: false, glyph: 'a', shop: 'armory', desc: 'Racked weapons and spare armor near the fight. Strengthens the camp’s defence, and its counter buys and sells rarer gear.' },
+  armory:     { size: [3, 2], walled: true, name: 'Arms Shop',       cat: 'martial',   cost: { wood: 20, iron: 15, gold: 30 },   work: 80,  solid: false, glyph: 'a', shop: 'armory', desc: 'Racked weapons and spare armor near the fight. Strengthens the camp’s defence, and its counter buys and sells rarer gear.' },
   archive:    { size: [3, 2], walled: true, name: 'Archive',         cat: 'production',cost: { wood: 25, stone: 15, dust: 10 },  work: 100, solid: false, glyph: 'r', job: 'research', researchWork: 32, desc: 'A second desk for Insight — proper shelves, not a reading nook.' },
   observatory:{ size: [2, 2], walled: true, name: 'Observatory',     cat: 'production',cost: { stone: 30, dust: 15, gems: 5 },   work: 140, solid: false, glyph: 'O', job: 'research', researchWork: 26, desc: 'The best place in the hold to generate Insight.' },
   archery_range:{ size: [3, 2], name: 'Archery Range', cat: 'martial',   cost: { wood: 15, stone: 5 },             work: 60,  solid: false, glyph: 'b', job: 'train', trainSkill: 'ranged', desc: 'Always trains Marksman, unlike the Training Dummy’s coin flip.' },
@@ -329,10 +329,20 @@ export const BUILDINGS = {
   planter:    { name: 'Flower Planter',  cat: 'comfort',   cost: { wood: 4, herbs: 1 },            work: 14,  solid: false, glyph: 'p', beauty: 3, desc: 'A box of wildflowers. Cheap beauty that doesn’t need a mason.' },
   bench:      { name: 'Bench',           cat: 'comfort',   cost: { wood: 6 },                      work: 14,  solid: false, glyph: '_', joy: 0.5, beauty: 0.5, desc: 'Somewhere to sit and do nothing for a while.' },
   game_table: { name: 'Gaming Table',    cat: 'comfort',   cost: { wood: 14, stone: 2 },           work: 40,  solid: false, glyph: 'g', joy: 1.4, beauty: 1, desc: 'Dice, cards and grudges. A better place to unwind than the dinner table.' },
+  // The camp's gear store. Every spare blade and hauberk lives here (the stash,
+  // game.armory); the building is where you go to hand it out.
+  gear_armory: { name: 'Armory',         cat: 'martial',   cost: { wood: 10, iron: 2 },            work: 30,  solid: true,  glyph: 'A', unique: true, desc: 'Racks for every spare weapon and piece of armour the camp owns. Open it to kit your people out — one piece at a time, or everyone at once.' },
   shelf:      { name: 'Storage Shelf',   cat: 'logistics', cost: { wood: 8 },                      work: 18,  solid: false, glyph: 'E', storage: 25, desc: 'Racks along a wall. A little storage in a little space.' },
   shed:       { size: [2, 2], walled: true, name: 'Storage Shed',    cat: 'logistics', cost: { wood: 24, stone: 8 },           work: 60,  solid: false, glyph: 'D', storage: 90, desc: 'A roofed store. Holds more than a stockpile, for more timber up front.' },
   well:       { name: 'Well',            cat: 'farm',      cost: { stone: 12, wood: 4 },           work: 50,  solid: true,  glyph: 'w', beauty: 1, irrigate: 5, desc: 'Waters the ground around it — fields within 5 tiles never go thirsty.' },
   scarecrow:  { name: 'Scarecrow',       cat: 'farm',      cost: { wood: 4, cloth: 2 },            work: 12,  solid: false, glyph: 'Y', guard: 4, desc: 'Keeps the birds off. Fields within 4 tiles yield 15% more.' },
+  // Plantings: put back what was cut. Each is a blueprint like any other; once
+  // built it grows for `growDays` and then becomes the feature it names
+  // (colony.js tickForest). Stone and ore never come back — only living things.
+  plant_tree:    { name: 'Tree Sapling',    cat: 'farm', cost: { wood: 2 },  work: 8, solid: false, glyph: ',', grows: 'tree',    growDays: 3,   desc: 'A sapling in turned earth. Grows into a Cavern Tree in about three days.' },
+  plant_fungus:  { name: 'Fungus Spores',   cat: 'farm', cost: { food: 2 },  work: 6, solid: false, glyph: ',', grows: 'fungus',  growDays: 2,   desc: 'Spores pressed into damp ground. A Giant Fungus in about two days.' },
+  plant_herb:    { name: 'Herb Seedlings',  cat: 'farm', cost: { herbs: 1 }, work: 6, solid: false, glyph: ',', grows: 'herb',    growDays: 1.5, desc: 'Wild herbs, replanted. A Herb Patch in a day and a half.' },
+  plant_glowcap: { name: 'Glowcap Spores',  cat: 'farm', cost: { dust: 1 },  work: 6, solid: false, glyph: ',', grows: 'glowcap', growDays: 2,   desc: 'Arcane dust and a mushroom cap. A Glowcap in about two days.' },
   stakes:     { name: 'Stake Line',      cat: 'martial',   cost: { wood: 5 },                      work: 18,  solid: true,  hp: 110, glyph: 'v', desc: 'Sharpened stakes, angled outward. Slows a night wave at the line.' },
 };
 export const BUILDING_IDS = Object.keys(BUILDINGS);
@@ -343,10 +353,10 @@ export const BUILDING_IDS = Object.keys(BUILDINGS);
 // names the render.js floor pattern; `speed` and `beauty` apply per tile, no
 // radius falloff — it is what you are standing on, not a room's decor.
 export const FLOORS = {
-  wood:    { name: 'Wood Floor',    cost: { wood: 3 },            work: 10, speed: 0.15, beauty: 1,   kind: 'planks',  desc: 'Warm and cheap. A little kinder underfoot than bare dirt.' },
-  stone:   { name: 'Flagstone',     cost: { stone: 2 },           work: 12, speed: 0.2,  beauty: 1,   kind: 'flags',   desc: 'Cleaner, faster floor.' },
+  wood:    { name: 'Wood Floor',    cost: { wood: 1 },            work: 10, speed: 0.15, beauty: 1,   kind: 'planks',  desc: 'Warm and cheap. A little kinder underfoot than bare dirt.' },
+  stone:   { name: 'Flagstone',     cost: { stone: 1 },           work: 12, speed: 0.2,  beauty: 1,   kind: 'flags',   desc: 'Cleaner, faster floor.' },
   pebble:  { name: 'Pebble Floor',  cost: { stone: 1 },           work: 6,  speed: 0.08, beauty: 0.4, kind: 'pebble',  desc: 'Loose gravel, tamped down. The cheapest floor there is.' },
-  crystal: { name: 'Crystal Floor', cost: { gems: 2, dust: 2 },   work: 20, speed: 0.3,  beauty: 4,   kind: 'crystal', desc: 'Polished arcane crystal. Glows faintly underfoot.' },
+  crystal: { name: 'Crystal Floor', cost: { gems: 1, dust: 1 },   work: 20, speed: 0.3,  beauty: 4,   kind: 'crystal', desc: 'Polished arcane crystal. Glows faintly underfoot.' },
 };
 export const FLOOR_IDS = Object.keys(FLOORS);
 
@@ -385,7 +395,7 @@ export const RESEARCH = {
   cartography:{ name: 'Cartography',      cost: 280,  req: ['letters'],    unlock: [],                      bonus: { scout: 1 }, desc: 'Scouts chart more of the region at every dawn.' },
   logistics:  { name: 'Logistics',        cost: 300,  req: ['letters'],    unlock: [],                      bonus: { haul: 0.35, storage: 40 }, desc: 'Faster hauling, more storage.' },
 
-  commerce:   { name: 'Commerce',         cost: 260,  req: ['letters'],    unlock: ['trading_post', 'armory'], desc: 'Trade networks: a Trading Post, and an Armory counter for rarer gear.' },
+  commerce:   { name: 'Commerce',         cost: 260,  req: ['letters'],    unlock: ['trading_post', 'armory'], desc: 'Trade networks: a Trading Post, and an Arms Shop counter for rarer gear.' },
   coinage:    { name: 'Coinage',          cost: 450,  req: ['commerce'],   unlock: ['counting_house'],      desc: 'A Counting House keeps gold safe, and makes it grow.' },
 
   // --- defense, decor and training ------------------------------------------

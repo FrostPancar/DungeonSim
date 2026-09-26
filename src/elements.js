@@ -132,7 +132,7 @@ export const TAGS = {
   mindless:   { name: 'Mindless',   icon: '🫥', immune: ['charm', 'fear', 'sleep', 'confuse'], desc: 'Ignores taunts half the time.' },
   // defence
   armored:    { name: 'Armored',    icon: '🛡️', arm: 3 },
-  evasive:    { name: 'Evasive',    icon: '💨', def: 2 },
+  evasive:    { name: 'Evasive',    icon: '💨', def: 1 },
   regenerating:{ name: 'Regenerating', icon: '💚', desc: 'Heals each round unless its bane struck it.' },
   magicres:   { name: 'Magic Resistant', icon: '🔰', desc: 'Half spell damage; resists spell statuses.' },
   undying:    { name: 'Undying',    icon: '⚰️', desc: 'May rise again at 1 HP unless finished by holy, fire or a critical.' },

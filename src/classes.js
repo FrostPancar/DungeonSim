@@ -18,8 +18,9 @@ export const TIER_LEVELS = [1, 10, 20, 30];     // level at which each tier open
 export const TIER_CAP = 10;                     // nodes you may own per tier
 export const LOADOUT_SLOTS = 4;
 
-/** Level-up XP: steep enough that a delver sits near 2× the Rift's level. */
-export function xpToNext(level) { return Math.round(90 + level * 45 + level * level * 3); }
+/** Level-up XP: steep enough that levels slow down late, but the early ones
+ *  come within a delve or two — watching a colonist grow is the point. */
+export function xpToNext(level) { return Math.round(55 + level * 28 + level * level * 2); }
 
 // --- class identity ----------------------------------------------------------
 // school: which structure teaches it. weapons: families it may wield (the one
@@ -39,9 +40,9 @@ export const CLASS_INFO = {
   artificer: { school: 'mage',   secondary: 'con', weapons: ['maul', 'hammer', 'crossbow', 'wand', 'sling'],       shield: true,  armor: 'medium', armorTraining: 0.8 },
 };
 export const SCHOOLS = {
-  combat: { name: 'Combat School', upgrade: 'Knight Academy', building: 'combat_school', academy: 'knight_academy', days: 2 },
-  mage:   { name: 'Mage School',   upgrade: 'Wizardry Academy', building: 'mage_school', academy: 'wizardry_academy', days: 3 },
-  temple: { name: 'Temple',        upgrade: 'Cathedral', building: 'temple', academy: 'cathedral', days: 3 },
+  combat: { name: 'Combat School', upgrade: 'Knight Academy', building: 'combat_school', academy: 'knight_academy', days: 1 },
+  mage:   { name: 'Mage School',   upgrade: 'Wizardry Academy', building: 'mage_school', academy: 'wizardry_academy', days: 1.5 },
+  temple: { name: 'Temple',        upgrade: 'Cathedral', building: 'temple', academy: 'cathedral', days: 1.5 },
 };
 /** Two prestige paths per class, opened at level 20 by the school's upgrade. */
 export const PRESTIGE = {
@@ -469,7 +470,7 @@ export function gainLevelXp(npc, xp) {
   return gained;
 }
 /** XP a fight's kills are worth, split among the survivors. */
-export function killXp(foe) { return Math.round((12 + (foe.level || 1) * 6) * (foe.boss ? 3 : 1)); }
+export function killXp(foe) { return Math.round((16 + (foe.level || 1) * 8) * (foe.boss ? 3 : 1)); }
 
 // --- prestige and changing class -------------------------------------------------
 /** Take a prestige path. The caller checks the academy; this checks the rest. */
@@ -483,6 +484,10 @@ export function choosePrestigePath(npc, pathId) {
   return '';
 }
 
+// The primary attribute a class asks for. Kept low enough that a founding
+// peasant can reach it in a few days: recruits walk in already classed, and a
+// camp that can't promote its own falls behind them.
+export const CLASS_ATTR_BAR = 11;
 /** Can this character learn that class at all? */
 export function classRequirement(npc, klass) {
   const C = CLASSES[klass];
@@ -491,9 +496,9 @@ export function classRequirement(npc, klass) {
   const attr = npc.attributes[C.primary] || 0;
   const mainSkill = Object.entries(C.skills).sort((a, b) => b[1] - a[1])[0][0];
   const burning = npc.passions && npc.passions[mainSkill] === 'burning';
-  if (attr < 12 && !(burning && attr >= 10)) {
+  if (attr < CLASS_ATTR_BAR && !(burning && attr >= CLASS_ATTR_BAR - 2)) {
     const drill = CLASS_INFO[klass] && CLASS_INFO[klass].school === 'combat' ? ' Drill at a Training Dummy to raise it.' : '';
-    return `Needs ${C.primary.toUpperCase()} 12 (has ${attr}).${drill}`;
+    return `Needs ${C.primary.toUpperCase()} ${CLASS_ATTR_BAR} (has ${attr}).${drill}`;
   }
   return '';
 }
@@ -501,9 +506,9 @@ export function classRequirement(npc, klass) {
 // --- drilling: the Training Dummy's way into a Combat class --------------------
 // A peasant too weak or slow for any Combat class can drill until they aren't:
 // every DRILL_SESSIONS sessions at a dummy lift the most promising Combat
-// attribute by one, and it stops at 12 — the bar, not a way past it.
-export const DRILL_SESSIONS = 6;
-export const DRILL_CAP = 12;
+// attribute by one, and it stops at the bar, not a way past it.
+export const DRILL_SESSIONS = 3;
+export const DRILL_CAP = CLASS_ATTR_BAR;
 /** The attribute drilling would raise, or null once any Combat class is open to them. */
 export function drillTarget(npc) {
   if (CLASS_INFO[npc.klass] && CLASS_INFO[npc.klass].school === 'combat') return null;

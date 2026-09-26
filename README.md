@@ -40,8 +40,8 @@ pause when a fight starts, damage numbers, reduce motion, edge fog.
 The screen is laid out like a war-table: resources top-left, colonist bar top-centre,
 alerts down the right edge, date and speed bottom-right, and six main tabs along
 the bottom — **Build · People · Colony · Research · Rift · World**. Related
-panels are sub-tabs of one window (People: Duties, Roster · Colony: Overview,
-Fields & Animals, Workshop, Chronicle · Research: Tech tree, Bestiary · World:
+panels are sub-tabs of one window (People: Duties, Roster, Classes, Armory · Colony: Overview,
+Events, Fields & Animals, Workshop, Chronicle · Research: Tech tree, Bestiary · World:
 Map, Caravans). Hovering shows a small card for whatever is under the pointer
 (💬 beside the speed controls turns these off); clicking something grows that
 card into the full inspector, which always sits bottom-right. Clicking one of
@@ -76,7 +76,18 @@ from dusk to dawn unless you order them to do something**. Classes come from
 schools, tomes and recruits: the camp starts with **one Class Tome**, the
 **Militia** research (a root of the tree) opens the Combat School, and peasants
 who drill at a Training Dummy grow strong or quick enough for a Combat class.
-**People › Classes** shows who can become what, with one click to enrol.
+**People › Classes** shows who can become what, with one click to enrol. School
+takes a day (a day and a half for magic and faith), and a graduate is schooled
+up to the level a recruit walking in today would have.
+
+The camp also starts with an **Armory**: a rack where every spare weapon and
+piece of armour lives. Open it from the building, or **People › Armory**, to see
+everyone's six slots at once, equip one piece at a time, or **Kit out everyone**
+with the best of the stash in one click. Any finished building has a
+**Demolish** button (tap twice) that salvages half its materials, and the Farm
+build tab has **saplings and spores** to regrow trees, fungus, herbs and
+glowcaps — stone and ore never come back. Whatever a colonist gathers floats up
+over their head (`+14 Wood`).
 
 A **Getting started** tracker at the top of the alerts walks through the first
 days, one line at a time. Skip it from its card, and replay it from the `?` help.
@@ -131,7 +142,8 @@ the climb to SSS.
 World › Map is a clickable region map and World › Caravans a two-sided market
 for arrivals and traders. Colony › Fields & Animals shows fields as growing
 plots and livestock in a pen, Colony › Workshop holds the forge, apothecary,
-magic, reagents and armory, and Colony › Chronicle is a filterable timeline.
+magic, reagents and stash, Colony › Events holds banquets, blessings and
+rumours, and Colony › Chronicle is a filterable timeline.
 Research › Bestiary lists every monster met and what killing them has taught.
 
 In People › Duties, 1 is done first and 4 last; click a cell to make it more
@@ -201,10 +213,11 @@ and fails the build on any top-level symbol collision.
 Gold has no storage ceiling, and almost all of it goes on shops and on building and upgrading structures (see `docs/economy-plan.md`).
 
 - **Forge tiers:** the Smithy makes the same Leather → Iron → Steel → Runed pieces every time. Steel needs the Smithy at level 2, and Runed at level 3.
-- **Shops you build:** the Armory buys and sells rarer gear, the Apothecary potions, the Stable beasts, and the Tavern hires sellswords.
+- **Shops you build:** the Arms Shop buys and sells rarer gear, the Apothecary potions, the Stable beasts, and the Tavern hires sellswords.
 - **Upgrades:** shops and workshops grow to level 3, built by colonists and paid for when finished.
 - **Visitors:** a drover, an arms dealer (who takes commissions), a curio dealer (Rift keys, relics), sellswords and pilgrims. A Trading Post brings them more often and fills standing orders from the caravan.
-- **Services:** blessings, and raising the dead at a level-3 Temple. Also feasts, rumours, paid training, and journeys to settlements to recruit, heal, pay tribute or fund their walls.
+- **Events** (Colony › Events): banquets, the temple's blessings, and a rumour of tonight's wave.
+- **Services:** raising the dead at a level-3 Temple, paid training, and journeys to settlements to recruit, heal, pay tribute or fund their walls.
 - **Rift merchants:** neutral traders on some floors — a fence, a mimic, a bone broker, a cartographer, a deep smith, a fey hawker. Rob one and its kind stays hostile. Sealed vaults need a Rift key.
 - **Counting House:** keeps gold safe from raiders and pays interest after a quiet week.
 

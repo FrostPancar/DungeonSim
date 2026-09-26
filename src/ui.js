@@ -14,7 +14,7 @@ import { beltSize } from './expedition.js';
 import { BIOMES_RIFT } from './biomes.js';
 import { bookRequirement, bookPrice, scrollPrice, partCost, spellBudget, writeCost, SPELL_FORMS, SPELL_ELEMENTS, SPELL_MODS } from './magic.js';
 import { PRESTIGE_PATHS } from './prestige.js';
-import { tiersOf, classRequirement, drillTarget, TREES, CLASS_INFO, PRESTIGE, SCHOOLS, LOADOUT_SLOTS, TIER_LEVELS, TIER_CAP, LEVEL_CAP, treeNodes, nodeTier, tierOpen, canBuy, buyNode, toggleLoadout, resetTree, pointsFree, xpToNext } from './classes.js';
+import { tiersOf, classRequirement, drillTarget, DRILL_CAP, TREES, CLASS_INFO, PRESTIGE, SCHOOLS, LOADOUT_SLOTS, TIER_LEVELS, TIER_CAP, LEVEL_CAP, treeNodes, nodeTier, tierOpen, canBuy, buyNode, toggleLoadout, resetTree, pointsFree, xpToNext } from './classes.js';
 import { autoplayStep } from './autoplay.js';
 import {
   BUILDINGS, FLOORS, RESOURCES, SKILLS, SKILL_IDS, TRAITS, RACES, CLASSES, ATTRS, ATTR_NAMES,
@@ -1741,8 +1741,8 @@ export class UI {
   // only makes, the tree only researches.
   // Each sub-tab is [drawer, label, icon]; the strip draws them as icon buttons.
   static GROUPS = {
-    people: [['people', 'Duties', '🛠️'], ['roster', 'Roster', '📋'], ['classes', 'Classes', '🎓']],
-    colony: [['colony', 'Overview', '📊'], ['farm', 'Fields & Animals', '🌾'], ['workshop', 'Workshop', '⚒️'], ['log', 'Chronicle', '📜']],
+    people: [['people', 'Duties', '🛠️'], ['roster', 'Roster', '📋'], ['classes', 'Classes', '🎓'], ['armory', 'Armory', '🗡️']],
+    colony: [['colony', 'Overview', '📊'], ['events', 'Events', '🎉'], ['farm', 'Fields & Animals', '🌾'], ['workshop', 'Workshop', '⚒️'], ['log', 'Chronicle', '📜']],
     research: [['research', 'Tech tree', '🔬'], ['bestiary', 'Bestiary', '📖']],
     party: [['party', 'Party', '🌀']],
     region: [['region', 'Map', '🗺️'], ['trade', 'Market', '🐫'], ['services', 'Services', '🪙']],
@@ -1882,7 +1882,7 @@ export class UI {
   static DRAWER_TITLE = {
     colony: 'Stronghold', people: 'Duties', region: 'World', party: 'Party',
     farm: 'Animals & Fields', research: 'Lore', trade: 'Market', services: 'Services', log: 'Chronicle',
-    workshop: 'Workshop', bestiary: 'Bestiary',
+    workshop: 'Workshop', bestiary: 'Bestiary', armory: 'Armory', events: 'Events',
   };
 
   renderDrawer() {
@@ -1925,7 +1925,7 @@ export class UI {
     const d = $('#drawer');
     if (!this.drawer) { d.classList.add('hidden'); return; }
     d.classList.remove('hidden');
-    d.classList.toggle('wide', ['people', 'roster', 'classes', 'trade', 'farm', 'colony', 'log', 'workshop', 'bestiary'].includes(this.drawer));
+    d.classList.toggle('wide', ['people', 'roster', 'classes', 'armory', 'events', 'trade', 'farm', 'colony', 'log', 'workshop', 'bestiary'].includes(this.drawer));
     d.classList.toggle('xwide', ['research', 'region', 'party', 'services'].includes(this.drawer));
     const body = $('#drawer .body');
     const t = $('#drawer .d-title');
@@ -1966,6 +1966,8 @@ export class UI {
     else if (this.drawer === 'log') this.drawLog(body);
     else if (this.drawer === 'roster') this.drawRoster(body);
     else if (this.drawer === 'classes') this.drawClasses(body);
+    else if (this.drawer === 'armory') this.drawArmory(body);
+    else if (this.drawer === 'events') this.drawEvents(body);
     body.scrollTop = scroll;
   }
 
@@ -1981,6 +1983,9 @@ export class UI {
     if (this.drawer === 'classes') {
       return 'classes|' + g.colonists.map(c => `${c.id}${c.klass}${c.level}${c.tree ? pointsFree(c) : ''}${c.training ? Math.floor(c.training.progress / c.training.need * 20) : ''}${c.away ? 'a' : ''}${c.drill || 0}${Object.values(c.attributes).join('')}`).join('|')
         + `|${g.reagents.class_tome || 0}|${Object.keys(SCHOOLS).map(k => g.hasSchool(k) ? 1 : 0).join('')}|${g.unlocked.size}`;
+    }
+    if (this.drawer === 'armory') {
+      return `armory|${g.armory.length}|${g.armory.map(it => it.id).join(',')}|${this.armorySel || ''}|` + g.colonists.map(c => `${c.id}${c.away ? 'a' : ''}${c.level}${Object.values(c.equipment).map(it => it ? it.id : '-').join('.')}`).join('|');
     }
     if (this.drawer === 'region') {
       // The region map is ~400 sites; only rebuild when what it shows has changed.
@@ -2026,6 +2031,7 @@ export class UI {
         { label: 'People', value: home.length, tip: 'At home now' },
         { label: 'Wealth', value: Math.round(g.wealth), color: 'var(--hi)', tip: 'Everything the hold owns, valued in gold' },
       ],
+      foot: [{ label: `🎉 Events — banquets & blessings${this.eventsReady() ? ` (${this.eventsReady()} ready)` : ''}`, cls: this.eventsReady() && g.morale < 50 ? 'primary' : '', onClick: () => this.openDrawer('events') }],
     }));
 
     // Needs and labour side by side: two short charts that read together.
@@ -2081,6 +2087,168 @@ export class UI {
    * peasant to school. The single place the class loop lives, instead of four
    * clicks deep in each colonist's card.
    */
+  /**
+   * People › Armory: the stash and everyone's kit in one place. Each row is a
+   * colonist with their six slots; ▲ counts the slots the stash could improve.
+   * "Kit out everyone" hands the best of the stash out in one go; picking a
+   * row lists the stash for that one person, best first.
+   */
+  drawArmory(body) {
+    const g = this.game;
+    const people = g.colonists.filter(c => !c.dead).sort((a, b) => (a.away ? 1 : 0) - (b.away ? 1 : 0) || powerOf(b) - powerOf(a));
+    const slotOf = (it) => it.slot || (it.kind === 'weapon' ? 'weapon' : 'armor');
+    const upgrades = (c) => {
+      let n = 0;
+      for (const sl of SLOTS) {
+        const cur = itemScore(c, c.equipment[sl]);
+        if (g.armory.some(it => slotOf(it) === sl && !canEquip(c, it) && itemScore(c, it) - cur > 0.5)) n++;
+      }
+      return n;
+    };
+    const ups = new Map(people.map(c => [c.id, c.away ? 0 : upgrades(c)]));
+    const totalUps = [...ups.values()].reduce((a, b) => a + b, 0);
+    const hasBuilding = g.world.findBuildings('gear_armory').length > 0;
+    body.appendChild(profileCard({
+      slim: true, tone: '#9aa3ad', avatar: '🗡️',
+      name: 'Armory',
+      sub: hasBuilding ? 'Every spare weapon and piece of armour the camp owns, and who is wearing what.' : 'The stash has no racks yet — build an Armory (Build › Martial) to give it a home.',
+      stats: [
+        { label: 'In the stash', value: g.armory.length, tip: 'Rift loot, forged pieces, shop buys and gear taken off colonists' },
+        { label: 'Upgrades waiting', value: totalUps, color: totalUps ? 'var(--good)' : '', tip: 'Slots, across everyone at home, that something in the stash would improve' },
+        { label: 'Gear kits', value: Math.floor(g.resources.gear || 0), tip: 'One reinforces a worn piece; two forge a new one at a smithy' },
+      ],
+      foot: [
+        { label: `⚡ Kit out everyone${totalUps ? ` (${totalUps})` : ''}`, cls: 'primary', disabled: !totalUps, tip: 'Everyone at home takes the best piece in the stash for each slot. The strongest pick first.',
+          onClick: () => { const n = this.act(g, 'autoEquip', []); this.flash(n ? `${n} piece${n === 1 ? '' : 's'} handed out` : 'Handed out', 'good'); this.sigs.drawer = null; this.renderDrawer(); } },
+      ],
+    }));
+    const sel = people.find(c => c.id === this.armorySel) || null;
+    const tbl = el('div', 'arm-tbl');
+    tbl.innerHTML = people.map(c => {
+      const n = ups.get(c.id);
+      const slots = SLOTS.map(sl => {
+        const it = c.equipment[sl];
+        const R = it ? (RARITIES[it.rarity] || RARITIES.common) : null;
+        return it ? `<span class="arm-slot" style="--rar:${R.color}" data-arm-off="${c.id}:${sl}" data-tipt="${esc(it.name)} — click to put it back in the stash">${SLOT_ICONS[sl]}<i>${esc(it.name)}</i></span>`
+          : `<span class="arm-slot empty" data-tipt="${sl}: empty">${SLOT_ICONS[sl]}<i>—</i></span>`;
+      }).join('');
+      return `<div class="arm-who${sel === c ? ' on' : ''}${c.away ? ' away' : ''}" data-arm-sel="${c.id}">
+        <div class="arm-name"><b>${esc(c.name.short)}</b><span class="mini">${esc(c.title || CLASSES[c.klass].name)} L${c.level} · ⚔️ ${powerOf(c)}${c.away ? ' · away' : ''}</span></div>
+        <div class="arm-slots">${slots}</div>
+        <div class="arm-act">${n ? `<button class="act small primary" data-arm-auto="${c.id}" data-tipt="Equip the best of the stash for ${esc(c.name.short)}">▲${n} Auto</button>` : '<span class="mini">✓</span>'}</div></div>`;
+    }).join('') || '<div class="mini">Nobody to equip.</div>';
+    body.appendChild(tbl);
+    // The stash, for whoever is picked — or as a plain grid when nobody is.
+    body.appendChild(el('div', '', sectHtml(sel ? `🎒 Stash for ${esc(sel.name.short)}` : '🎒 Stash', sel ? 'best first · click a row above to switch' : 'pick someone above to equip them')));
+    if (!g.armory.length) body.appendChild(el('div', 'mini', 'Empty. Loot comes back from delves and beaten raids; a smithy forges more.'));
+    else if (sel) {
+      const rows = g.armory.map((it, i) => ({ it, i, why: canEquip(sel, it), gain: itemScore(sel, it) - itemScore(sel, sel.equipment[slotOf(it)]) }))
+        .sort((x, y) => (x.why ? 1 : 0) - (y.why ? 1 : 0) || y.gain - x.gain);
+      const box = el('div', 'arm-stash');
+      box.innerHTML = rows.slice(0, 40).map(({ it, i, why, gain }) => {
+        const R = RARITIES[it.rarity] || RARITIES.common;
+        return `<div class="row arm-row${why ? ' cant' : ''}" data-tip="arm:${i}"><span class="k">${SLOT_ICONS[slotOf(it)]} <b style="color:${R.color}">${esc(it.name)}</b>
+          ${!why ? `<span class="mini" style="color:${gain > 0 ? 'var(--good)' : 'var(--dim2)'}">${gain > 0 ? '▲' : '▼'}${Math.abs(Math.round(gain))}</span>` : `<span class="mini">${esc(why)}</span>`}</span>
+          <button class="act small" data-arm-eq="${sel.id}:${i}"${why || sel.away ? ' disabled' : ''}>Equip</button></div>`;
+      }).join('');
+      body.appendChild(box);
+    } else {
+      const ag = el('div', 'tr-arm');
+      ag.innerHTML = g.armory.slice(0, 48).map((it, i) => {
+        const R = RARITIES[it.rarity] || RARITIES.common;
+        return `<div class="tr-gear ${it.kind}" data-tip="arm:${i}" style="--rar:${R.color}"><div class="tr-ic">${SLOT_ICONS[slotOf(it)] || '⚔️'}</div><div class="tr-n">${esc(it.name)}</div>
+          <div class="tr-q">${it.dmg ? `${it.dmg[0]}–${it.dmg[1]} dmg` : it.armor ? `+${it.armor} armour` : esc(R.name || '')}</div></div>`;
+      }).join('');
+      body.appendChild(ag);
+    }
+    body.onclick = (e) => {
+      const t = e.target.closest && e.target.closest('[data-arm-auto],[data-arm-eq],[data-arm-off],[data-arm-sel]');
+      if (!t || t.disabled) return;
+      const d = t.dataset;
+      if (d.armAuto) { const n = this.act(g, 'autoEquip', [+d.armAuto]); if (n === 0) this.flash('Nothing better in the stash', 'warn'); }
+      else if (d.armEq) { const [id, i] = d.armEq.split(':').map(Number); const r = this.act(g, 'equip', id, i); if (r) this.toast(r, 'warn'); }
+      else if (d.armOff) { const [id, sl] = d.armOff.split(':'); this.act(g, 'unequip', +id, sl); }
+      else if (d.armSel) this.armorySel = +d.armSel === this.armorySel ? null : +d.armSel;
+      this.sigs.drawer = null; this.renderDrawer();
+    };
+  }
+
+  /** How many camp events could be held right now: the Colony tab's nudge. */
+  eventsReady() {
+    const g = this.game, gold = g.resources.gold || 0;
+    let n = 0;
+    const fc = festivalCost(g);
+    if ((g.lastFestival || -99) <= g.day - 5 && (g.resources.food || 0) >= fc.food && gold >= fc.gold) n++;
+    const temple = builtLevel(g, 'temple') || builtLevel(g, 'shrine') || traderOf(g, 'pilgrims');
+    if (temple) for (const id in BLESSINGS) if (!(g.blessings && g.blessings[id]) && gold >= blessingCost(g, id)) n++;
+    if (builtLevel(g, 'tavern') && g.intelDay !== g.day && gold >= RUMOUR_COST) n++;
+    return n;
+  }
+
+  /**
+   * Colony › Events: the things you can throw for the camp — a banquet, the
+   * temple's blessings, a round at the tavern for news of tonight. One card
+   * each, saying plainly what it costs, what it does, and why it can't be
+   * held yet when it can't.
+   */
+  drawEvents(body) {
+    const g = this.game, gold = Math.floor(g.resources.gold || 0);
+    body.appendChild(profileCard({
+      slim: true, tone: '#e0a04a', avatar: '🎉', badge: this.eventsReady() || '',
+      name: 'Camp events',
+      sub: 'Feasts, rites and rumours: gold and food spent on the people who hold the line.',
+      stats: [
+        { label: 'Morale', value: Math.round(g.morale), color: moodStatus(g.morale).color, tip: moodStatus(g.morale).name },
+        { label: 'Gold', value: gold, color: 'var(--hi)' },
+        { label: 'Food', value: Math.floor(g.resources.food || 0) },
+      ],
+    }));
+    const cards = [];
+    // The banquet
+    {
+      const fc = festivalCost(g);
+      const wait = Math.max(0, (g.lastFestival ?? -99) + 5 - g.day);
+      const why = wait ? `Ready again in ${wait} day${wait === 1 ? '' : 's'}.`
+        : (g.resources.food || 0) < fc.food ? `Needs ${fc.food} food.` : gold < fc.gold ? `Needs ${fc.gold} gold.` : '';
+      const tav = builtLevel(g, 'tavern');
+      cards.push({ id: 'feast', icon: '🍗', name: 'Banquet', ready: !why, why,
+        desc: `The whole camp eats, drinks and forgets the Rift for a night. Morale +${12 + tav * 3}${tav ? ' (the Tavern adds to it)' : ''}, and joy for everyone. Once every five days.`,
+        cost: `🪙${fc.gold} · ${RESOURCE_ICON.food || '🍖'}${fc.food}`, label: '🍗 Hold a banquet' });
+    }
+    // Blessings
+    const temple = builtLevel(g, 'temple') || builtLevel(g, 'shrine');
+    const pilgrims = traderOf(g, 'pilgrims');
+    for (const [id, B] of Object.entries(BLESSINGS)) {
+      const on = g.blessings && g.blessings[id];
+      const cost = blessingCost(g, id);
+      const why = on ? '' : !(temple || pilgrims) ? 'Needs a Temple or Shrine (or pilgrims in camp).' : gold < cost ? `Needs ${cost} gold.` : '';
+      cards.push({ id: 'bless:' + id, icon: '✨', name: B.name, ready: !on && !why, active: on ? `Active · ${Math.max(0, on.until - g.day)} day${on.until - g.day === 1 ? '' : 's'} left` : '', why,
+        desc: B.desc, cost: `🪙${cost}`, label: `✨ ${B.name}` });
+    }
+    // The rumour
+    {
+      const tav = builtLevel(g, 'tavern');
+      const why = !tav ? 'Needs a Tavern Board.' : g.intelDay === g.day ? 'Already heard tonight’s news.' : gold < RUMOUR_COST ? `Needs ${RUMOUR_COST} gold.` : '';
+      cards.push({ id: 'rumour', icon: '📣', name: 'Buy a rumour', ready: !why, why, active: tav && g.intelDay === g.day ? 'Tonight’s wave comes out 12% weaker' : '',
+        desc: 'A drinker who has watched the Rift at dusk tells you what is coming. Tonight’s wave comes out 12% weaker.', cost: `🪙${RUMOUR_COST}`, label: '📣 Buy a rumour' });
+    }
+    const grid = el('div', 'ev-grid');
+    grid.innerHTML = cards.map(c => `<div class="ev-card${c.ready ? ' ready' : ''}${c.active ? ' active' : ''}">
+        <div class="ev-h"><span class="ev-ic">${c.icon}</span><div><b>${esc(c.name)}</b><div class="mini">${c.cost}</div></div></div>
+        <div class="mini">${esc(c.desc)}</div>
+        ${c.active ? `<span class="chip good">${esc(c.active)}</span>` : `<button class="act${c.ready ? ' primary' : ''}" data-ev="${c.id}"${c.ready ? '' : ` disabled data-tipt="${esc(c.why)}"`}>${c.label}</button>${c.why ? `<div class="mini" style="color:var(--dim2)">${esc(c.why)}</div>` : ''}`}
+      </div>`).join('');
+    body.appendChild(grid);
+    body.onclick = (e) => {
+      const b = e.target.closest && e.target.closest('[data-ev]');
+      if (!b || b.disabled) return;
+      const id = b.dataset.ev;
+      const r = id === 'feast' ? festival(g) : id === 'rumour' ? buyRumour(g) : bless(g, id.split(':')[1]);
+      if (r) this.toast(r, 'warn'); else this.flash('Done', 'good');
+      this.sigs.drawer = null; this.renderDrawer(); this.renderTop();
+    };
+  }
+
   drawClasses(body) {
     const g = this.game;
     this.peopleCard(body);
@@ -2107,7 +2275,7 @@ export class UI {
         else {
           const dt = drillTarget(c);
           const anyWay = Object.keys(SCHOOLS).some(k => g.hasSchool(k)) || tomes;
-          doing = `<span class="mini">${dt ? `${dt.attr.toUpperCase()} ${dt.value}/12 for ${esc(CLASSES[dt.klass].name)} — ${g.world.findBuildings('training').length ? 'drilling at the Training Dummy raises it' : 'a Training Dummy would raise it'}.` : ''}${!anyWay ? ' No school or tome yet.' : ''}</span>`;
+          doing = `<span class="mini">${dt ? `${dt.attr.toUpperCase()} ${dt.value}/${DRILL_CAP} for ${esc(CLASSES[dt.klass].name)} — ${g.world.findBuildings('training').length ? 'drilling at the Training Dummy raises it' : 'a Training Dummy would raise it'}.` : ''}${!anyWay ? ' No school or tome yet.' : ''}</span>`;
         }
       }
       return `<div class="rrow cls-row" data-cls-pick="${c.id}">
@@ -2977,7 +3145,7 @@ export class UI {
     this.drawShops(body);
     if (!g.caravan && !g.pendingArrivals.length && !body.querySelector('.shop-sect')) {
       body.appendChild(el('div', 'tr-empty', `<div>🐫</div><b>The market square is quiet.</b>
-        <span>Caravans, traders and wanderers arrive over time. Build an Armory, Apothecary or Stable for shops of your own.</span>`));
+        <span>Caravans, traders and wanderers arrive over time. Build an Arms Shop, Apothecary or Stable for shops of your own.</span>`));
     }
   }
 
@@ -3047,7 +3215,7 @@ export class UI {
       return box;
     };
     if (builtLevel(g, 'armory')) {
-      wrap.appendChild(shopHead('armory', 'Armory', '🛡️', 5));
+      wrap.appendChild(shopHead('armory', 'Arms Shop', '🛡️', 5));
       const gr = grid();
       gr.innerHTML = ((S.armory && S.armory.items) || []).map((it, i) => itemTile(it, itemPrice(it), `data-sbuy="armory:${i}"`)).join('') || '<div class="mini">Sold out until the next restock.</div>';
       wrap.appendChild(gr);
@@ -3123,7 +3291,7 @@ export class UI {
   }
 
   /**
-   * World › Services: gold spent on people and favours — sellswords, feasts,
+   * World › Services: gold spent on people and favours — sellswords,
    * rumours, blessings, training, journeys — plus standing orders, the
    * strongroom, and where the gold has gone.
    */
@@ -3151,7 +3319,7 @@ export class UI {
 
     // Tavern
     const tav = builtLevel(g, 'tavern');
-    wrap.appendChild(sect(`🍺 Tavern${tav ? ` <span class="lvl">L${tav}</span>` : ''}`, tav ? 'sellswords, rumours and feasts' : '<span class="need">needs a Tavern Board</span>'));
+    wrap.appendChild(sect(`🍺 Tavern${tav ? ` <span class="lvl">L${tav}</span>` : ''}`, tav ? 'sellswords' : '<span class="need">needs a Tavern Board</span>'));
     const mercs = g.colonists.filter(c => c.merc);
     const S = shopsOf(g);
     const forHire = (S.tavern && S.tavern.mercs) || [];
@@ -3160,22 +3328,13 @@ export class UI {
       gr.innerHTML = forHire.map((n, i) => { const fee = mercFee(n); return `<div class="tr-item merc${gold >= fee ? '' : ' no'}" data-hire="${i}"><div class="tr-ic">${RACE_ICON[n.race] || '🧑'}</div><div class="tr-n">${esc(n.name.short)}</div><div class="tr-q">${CLASSES[n.klass].name} L${n.level} · ⚔️ ${powerOf(n)}</div><div class="tr-p">🪙 ${fee} + ${mercWage(n)}/day</div></div>`; }).join('');
       wrap.appendChild(gr);
     }
-    const fc = festivalCost(g);
-    const row = el('div', 'shop-row');
-    row.innerHTML = btn('📣 Buy a rumour', 'data-svc="rumour"', RUMOUR_COST, 'Tonight’s wave comes out 12% smaller.', !!tav)
-      + btn(`🎲 Hold a feast (${fc.food} food)`, 'data-svc="feast"', fc.gold, 'A day off: morale and joy for everyone. Once every five days.', true);
-    wrap.appendChild(row);
+    wrap.appendChild(el('div', 'hint', 'Banquets, rumours and blessings are under Colony › 🎉 Events.'));
     if (mercs.length) wrap.appendChild(el('div', 'shop-row', mercs.map(c => `<span class="chip">${RACE_ICON[c.race] || '🧑'} ${esc(c.name.short)} · 🪙${c.merc.wage}/day <button class="act danger small" data-dismiss="${c.id}">Dismiss</button></span>`).join('')));
 
     // Temple
     const tem = builtLevel(g, 'temple'), shr = builtLevel(g, 'shrine');
-    wrap.appendChild(sect(`🙏 Temple${tem ? ` <span class="lvl">L${tem}</span>` : ''}`, tem || shr ? 'blessings for the camp' : '<span class="need">needs a Temple or Shrine</span>'));
-    const brow = el('div', 'shop-row');
-    brow.innerHTML = Object.entries(BLESSINGS).map(([id, B]) => {
-      const on = g.blessings && g.blessings[id];
-      return on ? `<span class="chip good">✨ ${B.name} · ${Math.max(0, on.until - g.day)}d left</span>` : btn(`✨ ${B.name}`, `data-bless="${id}"`, blessingCost(g, id), B.desc, !!(tem || shr || traderOf(g, 'pilgrims')));
-    }).join('');
-    wrap.appendChild(brow);
+    wrap.appendChild(sect(`🙏 Temple${tem ? ` <span class="lvl">L${tem}</span>` : ''}`, tem >= 3 ? 'raising the dead' : 'blessings are under Colony › Events'));
+
     if (tem >= 3 && g.graveyard.length) {
       const gr = el('div', 'shop-row');
       gr.innerHTML = '<span class="mini">Raise the dead:</span>' + g.graveyard.slice(-6).map((d, k) => { const i = g.graveyard.length - Math.min(6, g.graveyard.length) + k; return btn(`💀 ${esc(d.name.short)}`, `data-raise="${i}"`, raiseCost(d), `${d.name.full}, level ${d.level}`); }).join('');
@@ -3323,7 +3482,9 @@ export class UI {
         ag.appendChild(t);
       });
       body.appendChild(ag);
-      body.appendChild(el('div', 'hint', 'Equip gear from a denizen’s Gear tab.'));
+      const go = el('button', 'act primary', '🗡️ Open the Armory to equip people');
+      go.onclick = () => this.openDrawer('armory');
+      body.appendChild(go);
     }
   }
 
@@ -3484,7 +3645,7 @@ export class UI {
       const noWay = !via ? (g.unlocked.has(S.building) ? `Build a ${S.name} to train this class, or find a Class Tome in the Rift.`
         : `Research ${RESEARCH[unlockTech] ? RESEARCH[unlockTech].name : 'more'}, then build a ${S.name} — or find a Class Tome in the Rift.`) : '';
       const why = req || noWay;
-      const how = via === 'school' ? `Train at the ${S.name}: ${S.days} days, halved with an instructor of level 5+.` : 'Read a Class Tome: one day, no school needed.';
+      const how = via === 'school' ? `Train at the ${S.name}: ${S.days} day${S.days === 1 ? '' : 's'}, halved with an instructor of level 3+.` : 'Read a Class Tome: one day, no school needed.';
       return { k, school, via, why, how, ready: !why };
     });
   }
@@ -3679,6 +3840,12 @@ export class UI {
     b.querySelectorAll('[data-unequip]').forEach(d => d.onclick = () => { this.act(g, 'unequip', c.id, d.dataset.unequip); this.sigs.insp = null; this.renderInspector(); });
     const box = b.querySelector('#armory');
     if (!g.armory.length) box.appendChild(el('div', 'mini', 'Empty. Loot comes back from delves and raids; a smithy forges more.'));
+    else {
+      const auto = el('button', 'act primary', '⚡ Auto-equip the best');
+      auto.dataset.tipt = 'Take the best piece in the stash for every slot it would improve.';
+      auto.onclick = () => { const n = this.act(g, 'autoEquip', [c.id]); if (n === 0) this.flash('Nothing better in the stash', 'warn'); this.sigs.insp = null; this.renderInspector(); };
+      box.appendChild(auto);
+    }
     // Best first: what would help this character most.
     const rows = g.armory.map((it, i) => ({ it, i, why: canEquip(c, it), gain: itemScore(c, it) - itemScore(c, c.equipment[it.slot || (it.kind === 'weapon' ? 'weapon' : 'armor')]) }))
       .sort((x, y) => (x.why ? 1 : 0) - (y.why ? 1 : 0) || y.gain - x.gain);
@@ -3941,9 +4108,25 @@ export class UI {
         () => this.openDrawer(BUILDINGS[bd.id].shop && !['trading_post', 'counting_house'].includes(BUILDINGS[bd.id].shop) ? 'trade' : 'services'));
     }
     if (bd && bd.done && bd.id === 'smithy') add('⚒️ Forge', () => this.openDrawer('workshop'));
+    if (bd && bd.done && bd.id === 'gear_armory') add('🗡️ Open the Armory', () => this.openDrawer('armory'), 'primary');
     if (terr.mineable || (f && FEATURES[f].inRock)) add('⛏️ Mine here', () => this.act(g, 'designate', x, y, 'mine'));
     if (f && !FEATURES[f].inRock) add('🌿 Harvest', () => this.act(g, 'designate', x, y, 'harvest'));
     if (w.designation[i] || (bd && !bd.done) || (fl && !fl.done)) add('🚫 Cancel', () => this.act(g, 'designate', x, y, 'cancel'), 'danger');
+    if (bd && bd.done) {
+      // Two taps: the first arms it, so a stray click can't flatten a hall.
+      const half = Object.entries(BUILDINGS[bd.id].cost).filter(([k, v]) => k !== 'gold' && v >= 2).map(([k, v]) => [k, Math.floor(v / 2)]);
+      const armed = this.demolishArm && this.demolishArm.b === bd && performance.now() - this.demolishArm.t < 4000;
+      const btn = el('button', 'act danger', armed ? '💥 Tap again to demolish' : `💥 Demolish${half.length ? ` · salvage ${costLine(Object.fromEntries(half))}` : ''}`);
+      btn.dataset.tipt = 'Tear it down at once. Half its materials come back to the stores.';
+      btn.onclick = () => {
+        if (!armed) { this.demolishArm = { b: bd, t: performance.now() }; this.sigs.insp = null; this.renderInspector(); return; }
+        this.demolishArm = null;
+        const r = this.act(g, 'demolish', x, y);
+        if (r) this.toast(r, 'warn');
+        this.renderer.cacheVersion = -1; this.sigs.insp = null; this.renderInspector();
+      };
+      box.appendChild(btn);
+    }
     if (!box.childElementCount) box.appendChild(el('div', 'mini', 'Nothing to order here.'));
   }
 

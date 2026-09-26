@@ -1034,6 +1034,32 @@ i.ring{display:inline-block;width:14px;height:14px;border-radius:3px;background:
 .tr-p{display:inline-block;margin-top:3px;padding:0 7px;border-radius:999px;background:var(--hi-bg);color:var(--hi);font-size:11px;font-weight:700}
 .tr-gear{cursor:var(--cur-arrow);border-left:3px solid var(--rar,var(--rule))}
 .tr-gear:hover{background:var(--s3)}
+/* People › Armory: one row per colonist, their six slots as chips */
+.arm-tbl{display:flex;flex-direction:column;gap:4px;margin:8px 0}
+.arm-who{display:grid;grid-template-columns:minmax(110px,150px) 1fr auto;gap:8px;align-items:center;padding:6px 8px;background:var(--s1);
+  border:1px solid var(--rule);border-radius:var(--r2);cursor:var(--cur-hand)}
+.arm-who:hover{background:var(--s2)}
+.arm-who.on{border-color:var(--hi);background:var(--s2)}
+.arm-who.away{opacity:.55}
+.arm-name{display:flex;flex-direction:column;min-width:0}
+.arm-name b{color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.arm-slots{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:3px;min-width:0}
+.arm-slot{display:flex;gap:4px;align-items:center;padding:2px 5px;border-radius:6px;background:var(--s2);border-left:3px solid var(--rar,var(--rule));
+  font-size:11px;min-width:0;cursor:var(--cur-hand)}
+.arm-slot i{font-style:normal;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
+.arm-slot.empty{opacity:.45;cursor:default}
+.arm-slot:not(.empty):hover{background:var(--s3)}
+.arm-stash{max-height:none}
+@media (max-width:640px){.arm-who{grid-template-columns:1fr auto}.arm-slots{grid-column:1 / -1;grid-row:2;grid-template-columns:repeat(3,minmax(0,1fr))}}
+/* Colony › Events */
+.ev-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin:8px 0}
+.ev-card{display:flex;flex-direction:column;gap:6px;padding:10px;background:var(--s1);border:1px solid var(--rule);border-radius:var(--r2)}
+.ev-card.ready{border-color:rgba(120,200,120,.45)}
+.ev-card.active{border-color:var(--hi)}
+.ev-h{display:flex;gap:8px;align-items:center}
+.ev-h .ev-ic{font-size:26px;line-height:1}
+.ev-h b{color:#fff;font-size:13.5px}
+.ev-card .act{align-self:flex-start}
 .tr-empty{text-align:center;padding:24px 12px;color:var(--dim);background:var(--s1);border:1px dashed var(--rule);border-radius:var(--r2);margin:6px 0}
 .tr-empty div{font-size:40px}
 .tr-empty b{display:block;color:var(--ink);margin:4px 0;font-size:13.5px}

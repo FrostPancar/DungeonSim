@@ -29,7 +29,7 @@ import { GENERAL_IDS, spellBudget, bookRequirement } from '../src/magic.js';
 import { tiersOf, changeClass } from '../src/classes.js';
 import { TREES, TREE_CLASSES, CLASS_INFO, PRESTIGE, treeNodes, canBuy, buyNode, toggleLoadout, pointsFree, pointsEarned, effectiveAbility, autoAllocate, gainLevelXp, xpToNext, LOADOUT_SLOTS, TIER_CAP, LEVEL_CAP } from '../src/classes.js';
 import { FAMILY_BUILDS, monsterStrikeAttr, MONSTERS, MONSTER_IDS, FAMILIES, ENCOUNTERS, ENCOUNTER_IDS, RANKS, rankIdx, tierRank, createMonster, buildEncounter, monsterWave, rollMonsterDrops, templatesFor, ESSENCES, TROPHIES } from '../src/monsters.js';
-import { Game, DUSK_HOUR, DAWN_HOUR, RIFT_DAYS_PER_LEVEL, riftTargetDanger } from '../src/game.js';
+import { Game, DUSK_HOUR, DAWN_HOUR, RIFT_DAYS_PER_LEVEL, riftTargetDanger, graduateLevel } from '../src/game.js';
 import { autoplayStep } from '../src/autoplay.js';
 import { TICKS_PER_DAY, TICKS_PER_HOUR, storageCap } from '../src/colony.js';
 import { Overworld, BIOMES, SITE_KINDS, classify } from '../src/overworld.js';
@@ -50,7 +50,7 @@ import { testBundle } from './bundle-test.mjs';
 import { existsSync, readFileSync } from 'node:fs';
 import { kw, traitSentiment, beastTraitSentiment } from '../src/keywords.js';
 import { advanceTutorial, noteTutorialEvent, tutorialState, TUTORIAL_STEPS, skipTutorialState } from '../src/tutorial.js';
-import { drillSession, drillTarget, DRILL_SESSIONS, classRequirement as classReqForTest } from '../src/classes.js';
+import { drillSession, drillTarget, DRILL_SESSIONS, DRILL_CAP, classRequirement as classReqForTest } from '../src/classes.js';
 import { sendJourney, siteErrand, upgradePack, PACK_STEP } from '../src/economy.js';
 import { fileURLToPath } from 'node:url';
 import { UI } from '../src/ui.js';
@@ -2152,7 +2152,8 @@ describe('Module integrity', () => {
   ok(reachableResearch.size === Object.keys(RESEARCH).length, 'no research is orphaned behind an impossible prerequisite');
   const unlockables = new Set(Object.values(RESEARCH).flatMap(r => r.unlock));
   const startUnlocked = new Set(['wall', 'door', 'bed', 'table', 'brazier', 'stockpile', 'farm', 'kitchen', 'carpenter', 'library',
-    'timber_wall', 'rug', 'bedroll', 'campfire', 'torch', 'planter', 'bench', 'game_table', 'shelf', 'shed', 'well', 'scarecrow', 'stakes']);
+    'timber_wall', 'rug', 'bedroll', 'campfire', 'torch', 'planter', 'bench', 'game_table', 'shelf', 'shed', 'well', 'scarecrow', 'stakes',
+    'plant_tree', 'plant_fungus', 'plant_herb', 'plant_glowcap', 'gear_armory']);
   const orphanBuildings = Object.keys(BUILDINGS).filter(b => !unlockables.has(b) && !startUnlocked.has(b));
   ok(orphanBuildings.length === 0, 'every building is either available at start or unlocked by research', orphanBuildings.join(','));
   ok(Object.values(CLASSES).every(c => c.abilities.length > 0), 'every class has at least one ability');
@@ -2195,7 +2196,8 @@ describe('View layer (headless smoke test — no interactive client)', () => {
     ui.renderTop(); ui.renderRail(); ui.pumpToasts();
     ok(true, 'top bar, rail and toasts render');
 
-    for (const d of ['colony', 'people', 'roster', 'farm', 'workshop', 'party', 'region', 'research', 'bestiary', 'trade', 'log']) { ui.drawer = d; ui.sigs.drawer = null; ui.renderDrawer(); }
+    for (const d of ['colony', 'people', 'roster', 'classes', 'armory', 'events', 'farm', 'workshop', 'party', 'region', 'research', 'bestiary', 'trade', 'services', 'log']) { ui.drawer = d; ui.sigs.drawer = null; ui.renderDrawer(); }
+    ui.armorySel = ui.game.colonists[0].id; ui.drawer = 'armory'; ui.sigs.drawer = null; ui.renderDrawer();
     ok(true, 'every drawer panel renders');
     for (const f of ['all', 'major', 'good', 'warn', 'combat', 'death']) { ui.logFilter = f; ui.drawer = 'log'; ui.renderDrawer(); }
     ok(true, 'history timeline renders under every filter');
@@ -2345,7 +2347,7 @@ describe('Onboarding & legibility', () => {
     const before = drillTarget(p);
     ok(before && before.value === 9, 'a weak peasant has something to drill toward');
     for (let i = 0; i < DRILL_SESSIONS * 5; i++) drillSession(p);
-    ok(drillTarget(p) === null && Math.max(p.attributes.str, p.attributes.dex) === 12, 'drilling stops once a Combat class is open', `${p.attributes.str}/${p.attributes.dex}`);
+    ok(drillTarget(p) === null && Math.max(p.attributes.str, p.attributes.dex) === DRILL_CAP, 'drilling stops once a Combat class is open', `${p.attributes.str}/${p.attributes.dex}`);
   }
   {
     // The first caravan comes by day 3, and the ledger tracks the treasury's net.
@@ -2531,6 +2533,71 @@ describe('Sleep orders, beasts that follow, pens and stat lines', () => {
   ok(la.str === beastAttributes({ id: 'b77', species: 'ox' }).str && la.str >= 14, 'a beast from an older save gets its species’ stats, the same every load');
 });
 
+describe('Armory, plantings, demolition and gather popups', () => {
+  ok(Object.values(FLOORS).every(f => Object.values(f.cost).every(v => v === 1)), 'every floor costs 1 of each resource');
+  {
+    // The camp opens with an Armory, and it hands the stash out.
+    const g = new Game('armory');
+    ok(g.world.findBuildings('gear_armory').length === 1, 'the camp starts with an Armory');
+    const c = g.colonists.find(x => x.tree) || g.colonists[0];
+    for (const sl of ['armor', 'head', 'feet']) c.equipment[sl] = null;
+    const plate = generateItem(new RNG('arm-pl'), { slot: 'head', tier: 4, rarity: 'rare' });
+    g.armory.push(plate);
+    const n = g.autoEquip([c.id]);
+    ok(n >= 1 && c.equipment.head === plate && !g.armory.includes(plate), 'auto-equip puts the best stash piece on', `${n} equipped`);
+    ok(g.autoEquip([c.id]) === 0, 'and does nothing when nothing in the stash is better');
+    const junk = generateItem(new RNG('arm-j'), { slot: 'feet', tier: 1, rarity: 'common' });
+    g.armory.push(junk);
+    ok(g.autoEquip([]) >= 1 && g.armory.indexOf(junk) < 0, 'kitting out everyone fills an empty slot on somebody');
+  }
+  {
+    // Demolish: gone at once, half the materials back.
+    const g = new Game('demolish');
+    const r = g.world.findBuildings('kitchen')[0];
+    const cost = BUILDINGS.kitchen.cost;
+    const before = { ...g.resources };
+    ok(g.demolish(r.x, r.y) === '' && !g.world.building[g.world.idx(r.x, r.y)], 'a building can be demolished');
+    ok(Object.entries(cost).filter(([k]) => k !== 'gold').every(([k, v]) => (g.resources[k] || 0) - (before[k] || 0) === Math.floor(v / 2)), 'and half its materials come back');
+    ok(g.demolish(r.x, r.y) !== '', 'an empty tile has nothing to demolish');
+  }
+  {
+    // Plantings grow into the thing they name; stone and ore never do.
+    const g = new Game('plant');
+    const w = g.world;
+    let spot = null;
+    for (let dy = -8; dy <= 8 && !spot; dy++) for (let dx = -8; dx <= 8 && !spot; dx++) {
+      const x = w.start.x + dx, y = w.start.y + dy, i = w.idx(x, y);
+      if ((w.terrain[i] === T.GRASS || w.terrain[i] === T.DIRT) && !w.feature[i] && !w.building[i] && w.walkable(x, y) && Math.abs(dx) + Math.abs(dy) > 5) spot = [x, y];
+    }
+    ok(!!spot && g.build(spot[0], spot[1], 'plant_tree'), 'a sapling can be planted on open ground');
+    const b = w.building[w.idx(spot[0], spot[1])];
+    b.done = true; b.workLeft = 0;
+    for (let i = 0; i < TICKS_PER_DAY * (BUILDINGS.plant_tree.growDays + 0.5) && w.feature[w.idx(spot[0], spot[1])] !== 'tree'; i++) { g.raiders.length = 0; g.step(); }
+    ok(w.feature[w.idx(spot[0], spot[1])] === 'tree' && !w.building[w.idx(spot[0], spot[1])], 'and grows into a tree', `${w.feature[w.idx(spot[0], spot[1])]}`);
+    ok(Object.values(BUILDINGS).filter(d => d.grows).every(d => !FEATURES[d.grows].inRock && d.grows !== 'ruin'), 'nothing regrows stone or ore');
+  }
+  {
+    // Whoever gathers something wears a note of what it was.
+    const g = new Game('gatherfx');
+    for (let i = 0; i < TICKS_PER_DAY && !g.colonists.some(c => c.gatherFx); i++) { autoplayStep(g); g.step(); }
+    const c = g.colonists.find(c => c.gatherFx);
+    ok(!!c && /^\+\d+ /.test(c.gatherFx.text), 'a colonist who gathers carries a "+N Resource" note for the renderer', c ? c.gatherFx.text : 'none');
+    ok(!saveState(g).includes('gatherFx'), 'and it is not saved');
+  }
+  {
+    // Graduates are schooled up to what a recruit would be.
+    const g = new Game('grad-par');
+    g.stats.cleared = 12;
+    const p = g.colonists.find(c => c.peasant);
+    p.attributes.str = 14;
+    g.reagents.class_tome = 1;
+    ok(g.readTome(p.id, 'fighter') === '', 'a peasant opens a tome');
+    p.training.progress = p.training.need - 1;
+    for (let i = 0; i < TICKS_PER_HOUR * 2; i++) { g.raiders.length = 0; g.step(); }
+    ok(p.klass === 'fighter' && p.level >= graduateLevel(g) - 1 && p.level > 1, 'a fresh graduate is brought up to a recruit’s level', `L${p.level} vs par ${graduateLevel(g)}`);
+  }
+});
+
 describe('Co-op lockstep and the desync fail-safe', () => {
   // Every game in this process shares the module-level id counters, so each
   // one gets its own set swapped in while it runs, as it would in its own tab.
@@ -2605,7 +2672,9 @@ describe('Co-op lockstep and the desync fail-safe', () => {
     for (const G of guests) if (G.game) on(G.game, () => G.advance(orders.int(0, 3)));
     if (f === TICKS_PER_DAY) late = addGuest('p3');
     // Knock one guest out of step on purpose: it has to notice and heal itself.
-    if (f === TICKS_PER_DAY + 500 && G2.game) { G2.game.colonists.find(c => !c.dead).x += 1; poked = true; }
+    // (Stores, not a position: a nudged colonist can walk back into step on
+    // its own before the next check, and then there is nothing to catch.)
+    if (f === TICKS_PER_DAY + 500 && G2.game) { G2.game.resources.wood = (G2.game.resources.wood || 0) + 7; poked = true; }
   }
   // Let the wire drain and everyone catch up.
   for (let k = 0; k < 200; k++) { now++; on(hg, () => H.flush(true)); deliver(); for (const G of guests) if (G.game) on(G.game, () => G.advance()); }

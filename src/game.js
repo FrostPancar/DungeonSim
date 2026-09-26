@@ -13,7 +13,7 @@ import { SEASONS, DAYS_PER_SEASON, DAYS_PER_YEAR, seasonOf, yearOf, initSoil, CR
 import { tickBeasts, spawnWildHerd, createBeast, herdCap, resetBeastIds, ANIMALS, tickFollowers, bringFollowers, moveBeastTo, canFollow, canHeel } from './husbandry.js';
 import { generateNPC, generateGroup, resetIds, powerOf, refresh, shiftHostility } from './npc.js';
 import {
-  tickColonist, tickFarms, tickForest, rebuildJobs, addResource, designate, placeBlueprint, placeFloorBlueprint,
+  tickColonist, tickFarms, tickForest, rebuildJobs, addResource, designate, placeBlueprint, placeFloorBlueprint, demolishBuilding,
   advanceResearch, pickNextResearch, addThought, TICKS_PER_DAY, TICKS_PER_HOUR, storageCap,
   rushJob, orderMove, orderWork, orderSleep, placePen, siteJobAt, siteWorkLeft, carryAlong,
 } from './colony.js';
@@ -21,9 +21,9 @@ import { tickSocial, resolveSocializeTask } from './social.js';
 import { generateDungeon, estimateDanger, estimateReward, MAX_DEPTH } from './dungeon.js';
 import { buildEncounter, rankIdx, resetMonsterIds } from './monsters.js';
 import { BIOMES_RIFT, rollBiome } from './biomes.js';
-import { CLASS_INFO, SCHOOLS, PRESTIGE, classRequirement, changeClass, choosePrestigePath, autoAllocate, toggleLoadout, LOADOUT_SLOTS } from './classes.js';
+import { CLASS_INFO, SCHOOLS, PRESTIGE, classRequirement, changeClass, choosePrestigePath, autoAllocate, toggleLoadout, LOADOUT_SLOTS, gainLevelXp, xpToNext } from './classes.js';
 import { bookRequirement, rollMagicStock, bookPrice, scrollPrice, partCost, spellBudget, writeCost, buildSpell, STARTING_PARTS } from './magic.js';
-import { canEquip, forgeItem, generateItem, LEGENDARY_RECIPES, POTIONS, ESSENCE_INGREDIENTS } from './items.js';
+import { canEquip, itemScore, forgeItem, generateItem, LEGENDARY_RECIPES, POTIONS, ESSENCE_INGREDIENTS } from './items.js';
 import { partyPower, dungeonPower, STANCES, awardXp, beltSize } from './expedition.js';
 import { maybeIncident, tickRaiders, threatLevel, colonyWealth, acceptArrival, rejectArrival, tradeBuy, tradeSell, buyLivestock, riftWave, riftDawn, waveForecast } from './events.js';
 
@@ -37,6 +37,11 @@ export const RIFT_DAYS_PER_LEVEL = 4;
 export function riftTargetDanger(lv) { return 76 + (lv - 1) * 46 + Math.max(0, lv - 6) ** 2 * 10; }
 /** The Rift's guild rank. It is an SSS-class gate; it just does not start as one. */
 export const RIFT_RANKS = [[1, 'E'], [2, 'D'], [3, 'C'], [5, 'B'], [7, 'A'], [9, 'S'], [12, 'SS'], [15, 'SSS']];
+/** The level a typical recruit arrives at today (see events.js incWanderer): graduates are schooled up to it. */
+export function graduateLevel(game) {
+  const tier = clamp(Math.round(threatLevel(game) * 0.7), 0, 10);
+  return clamp(1 + Math.round(tier * 1.4), 1, 15);
+}
 export function riftRank(lv) { let r = 'E'; for (const [at, name] of RIFT_RANKS) if (lv >= at) r = name; return r; }
 export const RIFT_MAX_LEVEL = 20;
 export const DUSK_HOUR = 18, DAWN_HOUR = 6;
@@ -48,10 +53,13 @@ const CAMP_LAYOUT = [
   // One 1×5 barracks rather than loose bedrolls.
   ['bed', -2, 4], ['bed', -1, 4], ['bed', 0, 4], ['bed', 1, 4], ['bed', 2, 4],
   ['brazier', -4, 0], ['brazier', 4, 0], ['brazier', 0, -3],
+  // The Armory: where the stash lives and gear gets handed out.
+  ['gear_armory', 2, 2],
 ];
 
 export const START_UNLOCKED = ['wall', 'door', 'bed', 'table', 'brazier', 'stockpile', 'farm', 'kitchen', 'carpenter', 'library',
-  'timber_wall', 'rug', 'bedroll', 'campfire', 'torch', 'planter', 'bench', 'game_table', 'shelf', 'shed', 'well', 'scarecrow', 'stakes'];
+  'timber_wall', 'rug', 'bedroll', 'campfire', 'torch', 'planter', 'bench', 'game_table', 'shelf', 'shed', 'well', 'scarecrow', 'stakes',
+  'plant_tree', 'plant_fungus', 'plant_herb', 'plant_glowcap', 'gear_armory'];
 
 // --- telemetry --------------------------------------------------------------
 // Sampled every two game-hours and kept for the last 120 samples (ten days), so
@@ -681,6 +689,7 @@ export class Game {
   build(x, y, id) { return placeBlueprint(this, x, y, id); }
   buildFloor(x, y, id) { return placeFloorBlueprint(this, x, y, id); }
   rush(x, y) { return rushJob(this, x, y); }
+  demolish(x, y) { return demolishBuilding(this, x, y); }
   orderMove(ids, x, y) { return orderMove(this, ids, x, y); }
   orderWork(ids, x, y) { return orderWork(this, ids, x, y); }
   orderSleep(ids, x, y) { return orderSleep(this, ids, x, y); }
@@ -823,8 +832,8 @@ export class Game {
       const t = c.training;
       if (t) {
         const info = CLASS_INFO[t.klass];
-        // An instructor of the class, level 5 or better, doubles the pace.
-        const teacher = this.colonists.some(x => x !== c && !x.away && x.klass === t.klass && x.level >= 5);
+        // An instructor of the class, level 3 or better, doubles the pace.
+        const teacher = this.colonists.some(x => x !== c && !x.away && x.klass === t.klass && x.level >= 3);
         t.progress += TICKS_PER_HOUR * (teacher && !t.tome ? 2 : 1);
         t.teacher = teacher;
         if (t.progress >= t.need) {
@@ -835,6 +844,12 @@ export class Game {
             if (it && canEquip(c, it)) { this.armory.push(it); c.equipment[sl] = null; }
           }
           if (this.autoSkills) autoAllocate(c, this.rng.fork('grad' + c.id));
+          // A fresh graduate is schooled up to what a recruit walking in today
+          // would be, so promoting your own people never loses to waiting for
+          // strangers.
+          const par = graduateLevel(this);
+          while (c.level < par && gainLevelXp(c, xpToNext(c.level) - (c.delveXp || 0))) {}
+          if (this.autoSkills) autoAllocate(c, this.rng.fork('grad2' + c.id));
           refresh(c);
           addThought(c, wasAdventurer ? 'starting_over' : 'graduated');
           // A graduate is no longer a peasant: they keep adventurer's hours and
@@ -849,7 +864,7 @@ export class Game {
       if (!c.tree || !CLASS_INFO[c.klass]) continue;
       const school = CLASS_INFO[c.klass].school;
       const cap = this.hasSchool(school, true) ? 20 : this.hasSchool(school) ? 10 : 0;
-      if (c.level < cap) awardXp(this, c, 6);
+      if (c.level < cap) awardXp(this, c, 12);
     }
   }
 
@@ -967,6 +982,32 @@ export class Game {
     c.equipment[slot] = null;
     refresh(c);
     return true;
+  }
+  /**
+   * The Armory's "kit everyone out": each of the given colonists (everyone at
+   * home when `ids` is empty) takes the best piece in the stash for each slot
+   * that beats what they wear. The strongest choose first, so the best blade
+   * goes to whoever will use it most. Returns how many pieces changed hands.
+   */
+  autoEquip(ids = null) {
+    const who = this.colonists.filter(c => !c.dead && !c.away && (!ids || !ids.length || ids.includes(c.id)))
+      .sort((a, b) => powerOf(b) - powerOf(a) || a.id - b.id);
+    let n = 0;
+    for (const c of who) {
+      for (const slot of ['weapon', 'offhand', 'armor', 'head', 'feet', 'charm']) {
+        let best = -1, bestGain = 0.5;
+        for (let i = 0; i < this.armory.length; i++) {
+          const it = this.armory[i];
+          if ((it.slot || (it.kind === 'weapon' ? 'weapon' : 'armor')) !== slot || canEquip(c, it)) continue;
+          if (slot === 'offhand' && c.equipment.weapon && c.equipment.weapon.hands === 2) continue;
+          const gain = itemScore(c, it) - itemScore(c, c.equipment[slot]);
+          if (gain > bestGain) { bestGain = gain; best = i; }
+        }
+        if (best >= 0 && this.equip(c.id, best) === '') n++;
+      }
+    }
+    if (n) this.log(`The armory kits out ${who.length === 1 ? who[0].name.short : 'the camp'}: ${n} piece${n === 1 ? '' : 's'} of gear changed hands.`, 'good');
+    return n;
   }
   /** Two gear kits at a smithy become a new piece of gear for the chosen slot. */
   forge(slot) {

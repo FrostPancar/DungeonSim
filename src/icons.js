@@ -55,6 +55,7 @@ export const BUILDING_ICON = {
   archive: '📖', observatory: '🔭', archery_range: '🎯', proving_grounds: '⚔️', herbalist_hut: '🌿',
   rug: '🧶', bedroll: '🛌', campfire: '🏕️', torch: '🕯️', planter: '🌼', bench: '🪑', game_table: '🎲',
   shelf: '🗄️', shed: '🛖', well: '🪣', scarecrow: '🌾', stakes: '🪵',
+  gear_armory: '🗡️', plant_tree: '🌱', plant_fungus: '🍄', plant_herb: '🌿', plant_glowcap: '✨',
   apothecary: '🧪', trading_post: '⚖️', counting_house: '🪙', stable: '🐫',
 };
 /** Floors, for the Architect picker only — the map itself draws the pattern,

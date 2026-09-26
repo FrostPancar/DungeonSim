@@ -236,7 +236,7 @@ function defMods(S, t) {
   if (env.cramped && (t.tags.has('large') || t.tags.has('huge') || t.tags.has('gargantuan'))) m -= 2;
   if (env.fortified && t.side === 'foe' && !hasSt(t, 'sunder')) m += 3;
   if (t.tags.has('shieldwall') && t.row === 'front' && sideOf(S, t.side).filter(u => standing(u) && u.row === 'front' && u.tags.has('shieldwall')).length >= 2) m += 3;
-  const ev = stGet(t, 'evasive'); if (ev) m += ev.mag || 3;
+  const ev = stGet(t, 'evasive'); if (ev) m += Math.min(3, ev.mag || 2);
   if (hasSt(t, 'root')) m -= 3;
   if (hasSt(t, 'slow')) m -= 2;
   const vu = stGet(t, 'vulnerable'); if (vu) m -= vu.mag || 2;
@@ -380,7 +380,9 @@ export function strike(S, a, t, o = {}) {
   const range = o.range || a.c.range || 'melee';
   const d20 = rng.int(1, 20);
   const acc = a.c.acc + accMods(S, a, range);
-  const dc = 10 + t.c.def + defMods(S, t) + (S.ctx.cover && range !== 'melee' && t.row === 'back' ? 2 : 0)
+  // Base 8, not 10: at 10 roughly three swings in ten whiffed, and a fight
+  // read as a string of dodges.
+  const dc = 8 + t.c.def + defMods(S, t) + (S.ctx.cover && range !== 'melee' && t.row === 'back' ? 2 : 0)
     + (S.coverOf ? S.coverOf(a, t, range) : 0);   // on the map: what the target is standing behind
   const frenzy = a.tags.has('bloodfrenzy') && t.hp < t.maxHp * 0.5 ? 3 : 0;
   let hit = !!o.autoHit || (d20 !== 1 && (d20 === 20 || d20 + acc + frenzy >= dc));

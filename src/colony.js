@@ -286,9 +286,37 @@ export function placeBlueprint(game, x, y, id) {
   if (!w.canPlace(id, x, y)) return false;
   if (def.unique && w.findBuildings(id).length > 0) return false;
   if (def.dark === false && w.light[i] < 0.2) return false;
+  // Plantings need open soil: moss or dirt, nothing already growing there.
+  if (def.grows && (w.feature[i] || (w.terrain[i] !== T.GRASS && w.terrain[i] !== T.DIRT))) return false;
   w.putBuilding(id, x, y, { id, done: false, workLeft: def.work, hp: def.hp || 120, growth: 0, progress: 0, reservedBy: 0 });
   game.jobsDirty = true;
   return true;
+}
+
+/**
+ * Tear a finished building down: gone at once, and half its materials (gold
+ * aside) come back to the stores. A blueprint is simply cancelled — nothing was
+ * spent on it yet. Anyone working on the footprint drops what they were doing.
+ * Returns '' on success or why not.
+ */
+export function demolishBuilding(game, x, y) {
+  const w = game.world;
+  if (!w.inside(x, y)) return 'Nothing to demolish.';
+  const i = w.idx(x, y), b = w.building[i];
+  if (!b) return 'Nothing to demolish.';
+  const def = BUILDINGS[b.id];
+  const tiles = new Set(w.tilesOf(b, i));
+  w.removeBuilding(x, y);
+  for (const c of game.colonists) if (c.task && w.inside(c.task.x, c.task.y) && tiles.has(w.idx(c.task.x, c.task.y))) c.task = null;
+  if (b.done) {
+    const back = {};
+    for (const k in def.cost) if (k !== 'gold') { const q = Math.floor(def.cost[k] / 2); if (q > 0) { addResource(game, k, q); back[k] = q; } }
+    w.recomputeLight();
+    const got = Object.entries(back).map(([k, v]) => `${v} ${(RESOURCES[k] && RESOURCES[k].name) || k}`).join(', ');
+    game.log(`${def.name} demolished${got ? ` — ${got} salvaged` : ''}.`, 'build');
+  }
+  game.jobsDirty = true;
+  return '';
 }
 
 /**
@@ -553,14 +581,29 @@ export function killColonist(game, npc, cause) {
 }
 
 // --- ground items & hauling -------------------------------------------------
-export function dropItems(game, x, y, yields, mult = 1) {
+export function dropItems(game, x, y, yields, mult = 1, by = null) {
+  const got = {};
   for (const res in yields) {
     const qty = Math.max(1, Math.round(yields[res] * mult));
+    got[res] = qty;
     const existing = game.ground.find(g => g.x === x && g.y === y && g.res === res);
     if (existing) existing.qty += qty;
     else game.ground.push({ x, y, res, qty, claimed: 0 });
   }
   game.jobsDirty = true;
+  if (by) showGather(by, got);
+}
+
+/**
+ * Tag a colonist with what they just gathered, for the renderer to float over
+ * their head ("+4 Wood"). Transient: save.js skips `gatherFx`, and nothing in
+ * the simulation reads it.
+ */
+export function showGather(npc, got) {
+  const parts = [];
+  for (const res in got) if (got[res] > 0) parts.push(`+${got[res]} ${(RESOURCES[res] && RESOURCES[res].name) || res}`);
+  if (!parts.length) return;
+  npc.gatherFx = { seq: ((npc.gatherFx && npc.gatherFx.seq) || 0) + 1, text: parts.join('  ') };
 }
 
 /** How much a colonist can carry out of the Rift: strong backs carry more. */
@@ -912,7 +955,7 @@ function completeTask(game, npc) {
       const f = w.feature[i];
       const y = f && FEATURES[f].inRock ? FEATURES[f].yield : TERRAIN[w.terrain[i]].yield;
       const mult = 1 + (game.bonuses.mineYield || 0) + npc.skills.mining * 0.02;
-      dropItems(game, t.x, t.y, y, mult);
+      dropItems(game, t.x, t.y, y, mult, npc);
       w.feature[i] = null;
       w.terrain[i] = T.DIRT;
       w.designation[i] = null;
@@ -925,14 +968,14 @@ function completeTask(game, npc) {
       if (f && FEATURES[f].prop) {
         // A prop breaks open: its fixed take drops here, and floors.js rolls
         // the rest — loot, gear, a prisoner, a blessing.
-        dropItems(game, t.x, t.y, FEATURES[f].yield, 1 + (npc.skills[harvestSkill(f)] || 0) * 0.02);
+        dropItems(game, t.x, t.y, FEATURES[f].yield, 1 + (npc.skills[harvestSkill(f)] || 0) * 0.02, npc);
         w.feature[i] = null;
         w.touch();
         if (game.onPropOpened) game.onPropOpened(npc, f, t.x, t.y);
       } else if (f) {
         const mult = 1 + (f === 'tree' ? npc.skills.woodcutting : npc.skills.farming) * 0.022 + (game.bonuses.farmYield || 0)
           + (f === 'herb' ? (game.bonuses.herbYield || 0) : 0);
-        dropItems(game, t.x, t.y, FEATURES[f].yield, mult);
+        dropItems(game, t.x, t.y, FEATURES[f].yield, mult, npc);
         w.feature[i] = null;
         w.touch();
       }
@@ -998,6 +1041,7 @@ function completeTask(game, npc) {
         if (take > 0) {
           npc.pack = npc.pack || {};
           npc.pack[it.res] = (npc.pack[it.res] || 0) + take;
+          showGather(npc, { [it.res]: take });
           it.qty -= take;
           if (it.qty <= 0) { const gi = game.ground.indexOf(it); if (gi >= 0) game.ground.splice(gi, 1); }
         }
@@ -1038,7 +1082,7 @@ function completeTask(game, npc) {
         const amount = Math.max(1, Math.round(
           crop.yield * (def.yield || 1) * clamp(v, 0.3, 1.25) *
           (1 + (game.bonuses.farmYield || 0) + npc.skills.farming * 0.03 + scarecrowBonus(game, t.x, t.y))));
-        dropItems(game, t.x, t.y, { [crop.product]: amount });
+        dropItems(game, t.x, t.y, { [crop.product]: amount }, 1, npc);
         // Harvest costs fertility; legumes give some back.
         if (w.soil) {
           const drain = SOIL_DRAIN - (crop.fixes || 0);
@@ -1088,7 +1132,7 @@ function completeTask(game, npc) {
       if (beast && beast.readyProduct > 0) {
         const A = ANIMALS[beast.species];
         const amount = Math.max(1, Math.round(beast.readyProduct * (1 + npc.skills.animals * 0.02)));
-        dropItems(game, beast.x, beast.y, { [A.product.res]: amount });
+        dropItems(game, beast.x, beast.y, { [A.product.res]: amount }, 1, npc);
         beast.readyProduct = 0;
       }
       break;
@@ -1097,7 +1141,7 @@ function completeTask(game, npc) {
       const beast = game.beasts.find(x => x.id === t.beastId);
       if (beast && !beast.dead) {
         const out = butcherBeast(game, beast);
-        dropItems(game, beast.x, beast.y, out);
+        dropItems(game, beast.x, beast.y, out, 1, npc);
         game.log(`${beast.name} the ${ANIMALS[beast.species].name} was butchered.`, 'info');
         // Colonists who like animals take it badly.
         for (const c of game.colonists) if (c.traits.includes('beastfriend')) addThought(c, 'bad_chat');
@@ -1109,7 +1153,9 @@ function completeTask(game, npc) {
       if (rec && hasResources(game, rec.inputs)) {
         spend(game, rec.inputs);
         const q = 1 + (npc.skills[rec.skill] || 0) * 0.05;
-        for (const out in rec.outputs) addResource(game, out, Math.max(1, Math.round(rec.outputs[out] * q)));
+        const made = {};
+        for (const out in rec.outputs) { made[out] = Math.max(1, Math.round(rec.outputs[out] * q)); addResource(game, out, made[out]); }
+        showGather(npc, made);
         game.stats.crafted++;
       }
       break;
@@ -1440,6 +1486,24 @@ export function tickForest(game) {
   if (game.tick % 400 !== 0) return;
   const w = game.world;
   const rng = game.rng;
+  // Plantings grow up, and once grown they are the real thing. A solid tree
+  // waits until nobody is standing on its tile.
+  for (let i = 0; i < w.building.length; i++) {
+    const b = w.building[i];
+    if (!b || !b.done) continue;
+    const def = BUILDINGS[b.id];
+    if (!def.grows) continue;
+    const stage = Math.floor((b.growth || 0) * 4);
+    b.growth = Math.min(1, (b.growth || 0) + 400 / (def.growDays * TICKS_PER_DAY));
+    if (b.growth < 1) { if (Math.floor(b.growth * 4) !== stage) w.touch(); continue; }   // redraw the sprout
+
+    const x = i % w.w, y = (i / w.w) | 0;
+    if (FEATURES[def.grows].solid && (game.colonists.some(c => c.x === x && c.y === y) || game.beasts.some(bb => bb.x === x && bb.y === y))) continue;
+    w.building[i] = null;
+    w.feature[i] = def.grows;
+    w.touch();
+    game.jobsDirty = true;
+  }
   const stands = [];
   for (let i = 0; i < w.feature.length; i++) if (w.feature[i] === 'tree') stands.push(i);
   if (stands.length > 200) return;

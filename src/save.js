@@ -12,7 +12,7 @@
 // A save also carries the module-level id counters, so a loaded run hands out
 // the same ids — and so plays out the same — as one that was never saved.
 // ============================================================================
-import { Game } from './game.js';
+import { Game, START_UNLOCKED } from './game.js';
 import { World } from './world.js';
 import { Overworld } from './overworld.js';
 import { RNG } from './rng.js';
@@ -25,7 +25,7 @@ import { livePotions, packPotions } from './realtime.js';
 export const SAVE_VERSION = 1;
 const SAVE_CLASSES = { Game, World, Overworld, RNG };
 // Derived or transient: rebuilt after loading rather than stored.
-const SKIP_KEYS = new Set(['view', 'occ', '_bcBuilt', 'fxAct', 'fxSt', 'fxCharging', '_bc', '_bcAll', '_open', 'spatial', 'aoeFocus']);
+const SKIP_KEYS = new Set(['view', 'occ', '_bcBuilt', 'fxAct', 'fxSt', 'fxCharging', '_bc', '_bcAll', '_open', 'spatial', 'aoeFocus', 'gatherFx']);
 const TYPED = { Uint8Array, Int32Array, Float32Array, Uint16Array, Int16Array, Float64Array, Uint32Array, Int8Array };
 
 function classOf(o) {
@@ -138,6 +138,8 @@ export function loadState(text) {
   }
   game._m = game.maps[0];
   game.root = game;
+  // Things every camp starts with that an older save predates (plantings, the Armory).
+  if (game.unlocked) for (const id of START_UNLOCKED) game.unlocked.add(id);
   const c = p.counters || {};
   resetIds(c.npc || 1); resetBeastIds(c.beast || 1); resetMonsterIds(c.monster || 900000); resetItemIds(c.item || 1);
   return { game, ui: p.ui || {} };

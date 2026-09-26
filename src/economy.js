@@ -10,7 +10,7 @@
 //   · Levels: shops and workshops grow to level 3 with gold and materials,
 //     built by colonists like any construction.
 //   · The Forge (the smithy) makes the same basic gear tiers every time.
-//   · Shops — Armory, Apothecary, Stable, Tavern, Temple, Trading Post,
+//   · Shops — Arms Shop, Apothecary, Stable, Tavern, Temple, Trading Post,
 //     Counting House — each have stock that rotates on its own rhythm.
 //   · Visitors: a drover, an arms dealer, a curio dealer, sellswords, pilgrims.
 //   · Rift merchants: neutral traders on some floors (floors.js places them).
@@ -183,7 +183,7 @@ export function forgeTier(game, slot, tierId, npcId = null) {
 
 // --- shops you build --------------------------------------------------------------
 export const SHOPS = {
-  armory:     { name: 'Armory',     building: 'armory',     every: 5, icon: '🛡️' },
+  armory:     { name: 'Arms Shop',  building: 'armory',     every: 5, icon: '🛡️' },
   apothecary: { name: 'Apothecary', building: 'apothecary', every: 2, icon: '🧪' },
   stable:     { name: 'Stable',     building: 'stable',     every: 6, icon: '🐫' },
   tavern:     { name: 'Tavern',     building: 'tavern',     every: 5, icon: '🍺' },
@@ -326,7 +326,7 @@ export function buyItem(game, from, i, cat = 'shops') {
 export function sellItem(game, armoryIdx) {
   const root = game.root, it = root.armory[armoryIdx];
   if (!it) return 'Nothing to sell.';
-  if (!builtLevel(root, 'armory') && !root.traders.some(t => t.kind === 'arms')) return 'Needs an Armory, or the arms dealer in camp.';
+  if (!builtLevel(root, 'armory') && !root.traders.some(t => t.kind === 'arms')) return 'Needs an Arms Shop, or the arms dealer in camp.';
   root.armory.splice(armoryIdx, 1);
   const got = earn(root, itemBuyback(it));
   root.log(`Sold ${it.name} for ${got} gold.`, 'info');
